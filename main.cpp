@@ -67,30 +67,8 @@ static std::vector<char> read_file(const std::string& file_name)
 vk::DebugUtilsMessengerEXT create_debug_utils_messenger_ext(vk::Instance instance, const vk::DebugUtilsMessengerCreateInfoEXT create_info, vk::DispatchLoaderDynamic& dispatch_loader)
 {
     // returns nullptr if function could not be loaded
-    return instance.createDebugUtilsMessengerEXT(create_info, nullptr, dispatch_loader); // (vk::vkCreateDebugUtilsMessengerEXT)instance.c getProcAddr("vk::CreateDebugUtilsMessengerEXT");
-
-//    if(func != nullptr)
-//    {
-//        return func(instance, create_info, allocator, debug_messenger);
-//    }
-//    else
-//    {
-//        return vk::ExtensionNotPresentError::; //VK_ERROR_EXTENSION_NOT_PRESENT;
-//    }
+    return instance.createDebugUtilsMessengerEXT(create_info, nullptr, dispatch_loader);
 }
-
-//
-//void destroy_debug_utils_messenger_ext(vk::Instance instance,
-//vk::DebugUtilsMessengerEXT debug_messenger,
-//const vk::AllocationCallbacks* allocator)
-//{
-//    auto func = (PFN_VK_DestroyDebugUtilsMessengerEXT)vk::GetInstanceProcAddr(instance, "vk::DestroyDebugUtilsMessengerEXT");
-//
-//    if(func != nullptr)
-//    {
-//        func(instance, debug_messenger, allocator);
-//    }
-//}
 
 static void framebuffer_resize_callback(GLFWwindow* window, int width, int height);
 
@@ -285,7 +263,6 @@ private:
         create_info.pApplicationInfo = &app_info;
 
         // can use glfw to wrangle what extensions are available to us
-
         auto extensions = get_required_extensions();
 
         create_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
@@ -322,11 +299,6 @@ private:
         populate_debug_messenger_create_info(create_info);
 
         m_debug_messenger = create_debug_utils_messenger_ext(m_instance, create_info, m_dispatch_loader);
-
-//        if (create_debug_utils_messenger_ext(m_instance, &create_info, nullptr) != vk::Result::eSuccess)
-//        {
-//            throw std::runtime_error("failed to set up debug messenger!");
-//        }
     }
 
     // since Vulkan is platform-agnostic it cannot interact directly with the window system,
@@ -345,7 +317,7 @@ private:
     void pick_physical_device()
     {
         unsigned device_count = 0;
-        vkEnumeratePhysicalDevices(m_instance, &device_count, nullptr);
+        vk::Result result = m_instance.enumeratePhysicalDevices(&device_count, nullptr);
 
         if (device_count == 0)
         {
@@ -356,9 +328,9 @@ private:
 
         // keeps track of devices and their score to pick the best option
         std::multimap<int, vk::PhysicalDevice> candidates;
-        m_instance.enumeratePhysicalDevices(&device_count, devices.data());
+        result = m_instance.enumeratePhysicalDevices(&device_count, devices.data());
 
-        for (const auto &device: devices)
+        for (const auto& device: devices)
         {
             if (is_device_suitable(device))
             {
@@ -512,10 +484,10 @@ private:
         }
 
         // we only specified a minimum amount of images to create, the implementation is capable of making more
-        m_device.getSwapchainImagesKHR(m_swapchain, &image_count, nullptr);
+        vk::Result result = m_device.getSwapchainImagesKHR(m_swapchain, &image_count, nullptr);
         m_swapchain_images.resize(image_count);
 
-        m_device.getSwapchainImagesKHR(m_swapchain, &image_count, m_swapchain_images.data());
+        result = m_device.getSwapchainImagesKHR(m_swapchain, &image_count, m_swapchain_images.data());
 
         // need these for later
         m_swapchain_image_format = surface_format.format;
@@ -589,7 +561,7 @@ private:
         // every subpass references one or more previously described attachments
         vk::AttachmentReference colour_attachment_ref{};
         colour_attachment_ref.attachment = 0; // references attachment by index
-        colour_attachment_ref.layout = vk::ImageLayout::eAttachmentOptimal; // VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL; // layout attachment should have during subpass
+        colour_attachment_ref.layout = vk::ImageLayout::eColorAttachmentOptimal; // VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL; // layout attachment should have during subpass
 
         vk::SubpassDescription subpass{};
         subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics; // VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -703,7 +675,7 @@ private:
         vk::PipelineInputAssemblyStateCreateInfo input_assembly{};
         input_assembly.sType = vk::StructureType::ePipelineInputAssemblyStateCreateInfo;
         input_assembly.topology = vk::PrimitiveTopology::eTriangleList;
-        input_assembly.primitiveRestartEnable = VK_FALSE; // idk
+        input_assembly.primitiveRestartEnable = false; // idk
 
         // viewport is the region of the framebuffer that the output will be rendered to
         // (0,0) to (width, height)
@@ -757,10 +729,11 @@ private:
         multi_sampling.sType = vk::StructureType::ePipelineMultisampleStateCreateInfo;
         multi_sampling.sampleShadingEnable = false;
         multi_sampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
-        multi_sampling.minSampleShading = 1.f;
-        multi_sampling.pSampleMask = nullptr;
-        multi_sampling.alphaToCoverageEnable = false;
-        multi_sampling.alphaToOneEnable = false;
+
+//        multi_sampling.minSampleShading = 1.f;
+//        multi_sampling.pSampleMask = nullptr;
+//        multi_sampling.alphaToCoverageEnable = false;
+//        multi_sampling.alphaToOneEnable = false;
 
         // if using depth or stencil buffer then they need to be configured
         // vk::PipelineDepthStencilStateCreateInfo
@@ -941,7 +914,7 @@ private:
                       vk::MemoryPropertyFlags properties, vk::Image& image, vk::DeviceMemory& image_memory)
     {
         vk::ImageCreateInfo image_info{};
-        image_info.sType = vk::StructureType::eImageViewCreateInfo;
+        image_info.sType = vk::StructureType::eImageCreateInfo;
         image_info.imageType = vk::ImageType::e2D; // what kind of coordinate system to use
         image_info.extent.width = static_cast<unsigned>(width);
         image_info.extent.height = static_cast<unsigned>(height);
@@ -1030,7 +1003,7 @@ private:
 
         //  map the buffer memory into CPU accessible memory
         void* data = m_device.mapMemory(staging_buffer_memory, 0, buffer_size);
-        memcpy(data, g_vertices.data(), (size_t)buffer_size);
+        memcpy(data, g_indices.data(), (size_t)buffer_size);
         m_device.unmapMemory(staging_buffer_memory);
 
         create_buffer(buffer_size, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
@@ -1191,7 +1164,6 @@ private:
             throw std::runtime_error("failed to create buffer!");
         }
 
-
         // for some reason to still need to allocate memory for this buffer
         // this struct contains:
         // - size: size of the required amount of memory in bytes, may differ from buffer_info.size
@@ -1281,8 +1253,6 @@ private:
                 throw std::runtime_error("failed to create sync objects!");
             }
         }
-
-
     }
 
     void main_loop()
@@ -1308,7 +1278,7 @@ private:
     void draw_frame()
     {
         // takes array of fences and waits for any and all fences
-        // saying vk::_TRUE means we want to wait for all fences
+        // saying VK_TRUE means we want to wait for all fences
         // last param is the timeout which we basically disable
         vk::Result result = m_device.waitForFences(1, &m_in_flight_fences[m_current_frame], true, UINT64_MAX);
 
@@ -1329,10 +1299,10 @@ private:
         // but only reset if we are submitting work
         result = m_device.resetFences(1, &m_in_flight_fences[m_current_frame]);
 
+        update_uniform_buffer(m_current_frame);
+
         m_command_buffers[m_current_frame].reset();
         record_command_buffer(m_command_buffers[m_current_frame], image_index);
-
-        update_uniform_buffer(m_current_frame);
 
         vk::SubmitInfo submit_info{};
         submit_info.sType = vk::StructureType::eSubmitInfo;
@@ -1347,7 +1317,6 @@ private:
         // which command buffers to submit
         submit_info.commandBufferCount = 1;
         submit_info.pCommandBuffers = &m_command_buffers[m_current_frame];
-
 
         // which semaphores to signal once the command buffer is finished
         vk::Semaphore signal_semaphores[] = {m_render_finished_semaphores[m_current_frame]};
@@ -1531,7 +1500,7 @@ private:
 
     // if the command buffer has already been recorded then this will reset it,
     // it's not possible to append commands at a later time
-    void record_command_buffer(vk::CommandBuffer command_buffer, unsigned image_index)
+    void record_command_buffer(vk::CommandBuffer& command_buffer, unsigned image_index)
     {
         vk::CommandBufferBeginInfo begin_info{};
         begin_info.sType = vk::StructureType::eCommandBufferBeginInfo;
@@ -1602,11 +1571,6 @@ private:
         command_buffer.endRenderPass();
 
         command_buffer.end();
-
-//        if( != vk::Result::eSuccess)
-//        {
-//            throw std::runtime_error("failed to record command buffer!");
-//        }
     }
 
     void transition_image_layout(vk::Image image, vk::Format format, vk::ImageLayout old_layout, vk::ImageLayout new_layout)
@@ -1655,7 +1619,7 @@ private:
         else if(old_layout == vk::ImageLayout::eTransferDstOptimal && new_layout == vk::ImageLayout::eShaderReadOnlyOptimal)
         {
             barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-            barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead;
+            barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
 
             source_stage = vk::PipelineStageFlagBits::eTransfer;
             destination_stage = vk::PipelineStageFlagBits::eFragmentShader;
@@ -1696,12 +1660,17 @@ private:
         create_info.pUserData = nullptr; // optional
     }
 
-    bool is_device_suitable(vk::PhysicalDevice device) {
+    bool is_device_suitable(vk::PhysicalDevice device)
+    {
         QueueFamilyIndices indices = find_queue_families(device);
 
-        bool extensions_supported = check_device_extension_support(device);
+        bool surface_supported = device.getSurfaceSupportKHR(indices.graphics_family.value(), m_surface);
 
+        if(!surface_supported) return false;
+
+        bool extensions_supported = check_device_extension_support(device);
         bool swap_chain_adequate = false;
+
         if (extensions_supported)
         {
             SwapChainSupportDetails swap_chain_support = query_swap_chain_support(device);
@@ -1712,7 +1681,8 @@ private:
         return indices.is_complete() && extensions_supported && swap_chain_adequate;
     }
 
-    int rate_device_suitability(vk::PhysicalDevice device) {
+    int rate_device_suitability(vk::PhysicalDevice device)
+    {
         int score = 0;
         vk::PhysicalDeviceProperties device_properties;
         vk::PhysicalDeviceFeatures device_features;
@@ -1758,7 +1728,7 @@ private:
             // it is very likely that these will be the same family
             // can add logic to prefer queue families that contain both
             vk::Bool32 present_support = false;
-            device.getSurfaceSupportKHR(i, m_surface, &present_support);
+            vk::Result result = device.getSurfaceSupportKHR(i, m_surface, &present_support);
 
             if (present_support)
             {

@@ -1,25 +1,7 @@
+#include "config.hpp"
+
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-
-#include <vulkan/vulkan.hpp>
-
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_ONE
-#include <glm/vec4.hpp>
-#include <glm/mat4x4.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-
-#include <iostream>
-#include <stdexcept>
-#include <cstdlib>
-#include <vector>
-#include <cstring>
-#include <map>
-#include <optional>
-#include <set>
-#include <limits>
-#include <fstream>
-#include <chrono>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -27,6 +9,7 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
+#include "Application.hpp"
 #include "Vertex.hpp"
 
 // interleaving vertex attributes
@@ -231,7 +214,7 @@ private:
         glfwInit();
 
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        m_window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan window", nullptr, nullptr);
+        m_window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Triangle Engine", nullptr, nullptr);
 
         // GLFW can't create a callback with a member function so we have to make it outside
         // but we can store an arbitrary pointer inside of the window
@@ -276,7 +259,7 @@ private:
 
         // a lot of info is passed through structs
         vk::ApplicationInfo app_info{};
-        app_info.sType = vk::StructureType::eApplicationInfo; // VK_STRUCTURE_TYPE_APPLICATION_INFO;
+        app_info.sType = vk::StructureType::eApplicationInfo;
         app_info.pApplicationName = "Hello Triangle";
         app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
         app_info.pEngineName = "No Engine";
@@ -284,7 +267,7 @@ private:
         app_info.apiVersion = VK_API_VERSION_1_1;
 
         vk::InstanceCreateInfo create_info{};
-        create_info.sType =  vk::StructureType::eInstanceCreateInfo; // VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+        create_info.sType =  vk::StructureType::eInstanceCreateInfo;
         create_info.pApplicationInfo = &app_info;
 
         // can use glfw to wrangle what extensions are available to us
@@ -386,7 +369,7 @@ private:
             vk::DeviceQueueCreateInfo queue_create_info{};
 
             // described number of queues we want in queue family
-            queue_create_info.sType = vk::StructureType::eDeviceQueueCreateInfo; // VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queue_create_info.sType = vk::StructureType::eDeviceQueueCreateInfo;
             queue_create_info.queueFamilyIndex = queue_family;
 
             // drivers will only allow a small # of queues per queue family, but you don't need more than 1 really
@@ -2133,7 +2116,8 @@ static void framebuffer_resize_callback(GLFWwindow* window, int width, int heigh
 
 int main() 
 {
-    HelloTriangle app;
+    // HelloTriangle app;
+    Application app(800, 600);
 
     try
     {

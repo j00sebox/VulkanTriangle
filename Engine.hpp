@@ -5,28 +5,31 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-static void framebuffer_resize_callback(GLFWwindow* window, int width, int height);
+#include "Device.hpp"
+
+static void framebuffer_resize_callback(GLFWwindow* window, i32 width, i32 height);
 
 class Engine
 {
 public:
-    Engine(int width, int height, GLFWwindow* window);
+    Engine(i32 width, i32 height, GLFWwindow* window);
     ~Engine();
 
-    void run();
+    void render();
 
     // many drivers trigger the out of date result, it's not guaranteed
     bool m_framebuffer_resized = false;
 
 private:
     GLFWwindow* m_window;
-    int m_width, m_height;
+    i32 m_width, m_height;
     vk::Instance m_instance;
     vk::DebugUtilsMessengerEXT m_debug_messenger;
     vk::DispatchLoaderDynamic m_dispatch_loader;
     vk::SurfaceKHR m_surface;
+    Device* m_device;
     vk::PhysicalDevice m_physical_device = nullptr;
-    vk::Device m_device;
+    vk::Device m_logical_device;
     vk::SwapchainKHR m_swapchain;
     vk::Format m_swapchain_image_format;
     vk::Extent2D m_swapchain_extent;
@@ -63,7 +66,10 @@ private:
     // allow multiple frames to be in-flight
     // this means we allow a new frame to start being rendered without interfering with one being presented
     // meaning we need multiple command buffers, semaphores and fences
-    const int MAX_FRAMES_IN_FLIGHT = 2;
+    const u16 MAX_FRAMES_IN_FLIGHT = 2;
+
+    // keeps track of the current frame index
+    u32 m_current_frame = 0;
 
 #ifdef NDEBUG
     const bool m_enable_validation_layers = false;
@@ -78,6 +84,7 @@ private:
 
     void create_instance();
     void create_surface();
+    void create_device();
 
     bool check_validation_layer_support();
     [[nodiscard]] std::vector<const char*> get_required_extensions() const;

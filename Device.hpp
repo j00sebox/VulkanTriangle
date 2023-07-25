@@ -5,7 +5,8 @@
 class Device
 {
 public:
-    Device(const vk::Instance& instance, vk::PhysicalDeviceFeatures features, vk::DeviceCreateInfo create_info);
+    Device(const vk::Instance& instance, const vk::SurfaceKHR& surface, vk::DeviceCreateInfo create_info);
+    ~Device();
 
     void draw_frame(u32 current_frame);
 

@@ -2,14 +2,17 @@
 
 Engine::Engine(int width, int height, GLFWwindow* window) :
     m_width(width),
-    m_height(height)
+    m_height(height),
+    m_window(window)
 {
     create_instance();
     create_surface();
+    create_device();
 }
 
 Engine::~Engine()
 {
+    delete m_device;
     if (m_enable_validation_layers)
     {
         m_instance.destroyDebugUtilsMessengerEXT(m_debug_messenger, nullptr, m_dispatch_loader);
@@ -18,12 +21,10 @@ Engine::~Engine()
     m_instance.destroy();
 }
 
-void Engine::run()
+void Engine::render()
 {
-    while (!glfwWindowShouldClose(m_window))
-    {
-        glfwPollEvents();
-    }
+    m_device->draw_frame(m_current_frame);
+    m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 void Engine::create_instance()
@@ -103,6 +104,29 @@ void Engine::create_surface()
     }
 
     m_surface = c_style_surface;
+}
+
+void Engine::create_device()
+{
+    vk::PhysicalDeviceFeatures device_features{};
+    device_features.samplerAnisotropy = true;
+
+    vk::DeviceCreateInfo create_info{};
+    create_info.sType = vk::StructureType::eDeviceCreateInfo; // VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+
+    create_info.pEnabledFeatures = &device_features;
+
+    if (m_enable_validation_layers)
+    {
+        create_info.enabledLayerCount = static_cast<unsigned>(m_validation_layers.size());
+        create_info.ppEnabledLayerNames = m_validation_layers.data();
+    }
+    else
+    {
+        create_info.enabledLayerCount = 0;
+    }
+
+    m_device = new Device(m_instance, m_surface, create_info);
 }
 
 bool Engine::check_validation_layer_support()

@@ -16,9 +16,98 @@ struct SwapChainSupportDetails
     std::vector<vk::PresentModeKHR> present_modes;
 };
 
-Device::Device(const vk::Instance& instance, vk::PhysicalDeviceFeatures features, vk::DeviceCreateInfo create_info)
+static QueueFamilyIndices find_queue_families(vk::PhysicalDevice device, vk::SurfaceKHR surface)
 {
+    QueueFamilyIndices indices;
+    unsigned queue_family_count = 0;
+    device.getQueueFamilyProperties(&queue_family_count, nullptr);
 
+    if (queue_family_count == 0) return indices;
+
+    std::vector<vk::QueueFamilyProperties> queue_families(queue_family_count);
+    device.getQueueFamilyProperties(&queue_family_count, queue_families.data());
+
+    int i = 0;
+    for (const auto &queue_family: queue_families) {
+        if (queue_family.queueFlags & vk::QueueFlagBits::eGraphics)
+        {
+            indices.graphics_family = i;
+        }
+
+        // it is very likely that these will be the same family
+        // can add logic to prefer queue families that contain both
+        vk::Bool32 present_support = false;
+        vk::Result result = device.getSurfaceSupportKHR(i, surface, &present_support);
+
+        if (present_support)
+        {
+            indices.present_family = i;
+        }
+
+        if (indices.is_complete()) break;
+
+        ++i;
+    }
+
+    return indices;
+}
+
+Device::Device(const vk::Instance& instance, const vk::SurfaceKHR& surface, vk::DeviceCreateInfo create_info)
+{
+    pick_physical_device(instance);
+    QueueFamilyIndices indices = find_queue_families(m_physical_device, surface);
+
+    std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
+    std::set<unsigned> unique_queue_families = {indices.graphics_family.value(), indices.present_family.value()};
+
+    float queue_priority = 1.f;
+    for (unsigned queue_family: unique_queue_families) {
+        vk::DeviceQueueCreateInfo queue_create_info{};
+
+        // described number of queues we want in queue family
+        queue_create_info.sType = vk::StructureType::eDeviceQueueCreateInfo;
+        queue_create_info.queueFamilyIndex = queue_family;
+
+        // drivers will only allow a small # of queues per queue family, but you don't need more than 1 really
+        // this is because you can create the command buffers on separate threads and submit all at once
+        queue_create_info.queueCount = 1;
+
+        // you can assign priorities to influence scheduling of command buffer execution
+        // number between 0.0 and 1.0
+        // this is required even if only 1 queue
+        queue_create_info.pQueuePriorities = &queue_priority;
+
+        queue_create_infos.push_back(queue_create_info);
+    }
+
+    create_info.queueCreateInfoCount = static_cast<unsigned>(queue_create_infos.size());
+    create_info.pQueueCreateInfos = queue_create_infos.data();
+
+    // previous versions of Vulkan had a distinction between instance and device specific validation layers
+    // meaning enabledLayerCount and ppEnabledLayerNames field are ignored
+    // it is still a good idea to set them to be compatible with older versions
+    create_info.enabledExtensionCount = static_cast<unsigned>(m_device_extensions.size());
+    create_info.ppEnabledExtensionNames = m_device_extensions.data();
+
+    // takes physical device to interface with, the queue and the usage info
+    if (m_physical_device.createDevice(&create_info, nullptr, &m_logical_device) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to create logical device!");
+    }
+
+    // since we only set 1 queue we can just index at 0
+    m_logical_device.getQueue(indices.graphics_family.value(), 0, &m_graphics_queue);
+    m_logical_device.getQueue(indices.present_family.value(), 0, &m_present_queue);
+}
+
+Device::~Device()
+{
+    // devices don't interact directly with instances
+    m_logical_device.destroy();
+}
+
+void Device::draw_frame(u32 current_frame)
+{
 }
 
 void Device::pick_physical_device(const vk::Instance& instance)
@@ -101,42 +190,6 @@ int Device::rate_device_suitability(vk::PhysicalDevice device)
     }
 
     return score;
-}
-
-QueueFamilyIndices find_queue_families(vk::PhysicalDevice device, vk::SurfaceKHR surface)
-{
-    QueueFamilyIndices indices;
-    unsigned queue_family_count = 0;
-    device.getQueueFamilyProperties(&queue_family_count, nullptr);
-
-    if (queue_family_count == 0) return indices;
-
-    std::vector<vk::QueueFamilyProperties> queue_families(queue_family_count);
-    device.getQueueFamilyProperties(&queue_family_count, queue_families.data());
-
-    int i = 0;
-    for (const auto &queue_family: queue_families) {
-        if (queue_family.queueFlags & vk::QueueFlagBits::eGraphics)
-        {
-            indices.graphics_family = i;
-        }
-
-        // it is very likely that these will be the same family
-        // can add logic to prefer queue families that contain both
-        vk::Bool32 present_support = false;
-        vk::Result result = device.getSurfaceSupportKHR(i, surface, &present_support);
-
-        if (present_support)
-        {
-            indices.present_family = i;
-        }
-
-        if (indices.is_complete()) break;
-
-        ++i;
-    }
-
-    return indices;
 }
 
 bool Device::check_device_extension_support(vk::PhysicalDevice device)

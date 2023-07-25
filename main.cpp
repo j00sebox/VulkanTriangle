@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.hpp>
 
 #define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_ONE
 #include <glm/vec4.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -27,15 +28,21 @@
 
 // interleaving vertex attributes
 const std::vector<Vertex> g_vertices = {
-         {{-0.5f, -0.5f}, {1.0f, 0.0f}},
-         {{0.5f, -0.5f}, {0.0f, 0.0f}},
-         {{0.5f, 0.5f}, {0.0f, 1.0f}},
-         {{-0.5f, 0.5f}, {1.0f, 1.0f}}
+         {{-0.5f, -0.5f, 0.f}, {1.0f, 0.0f}},
+         {{0.5f, -0.5f, 0.f}, {0.0f, 0.0f}},
+         {{0.5f, 0.5f, 0.f}, {0.0f, 1.0f}},
+         {{-0.5f, 0.5f, 0.f}, {1.0f, 1.0f}},
+
+        {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f}},
+        {{0.5f, -0.5f, -0.5f}, {0.0f, 0.0f}},
+        {{0.5f, 0.5f, -0.5f}, {0.0f, 1.0f}},
+        {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f}}
 };
 
 const std::vector<unsigned> g_indices =
 {
-        0, 1, 2, 2, 3, 0
+        0, 1, 2, 2, 3, 0,
+        4, 5, 6, 6, 7, 4
 };
 
 // reads all bytes from SPIR-V bin and return byte array
@@ -131,6 +138,10 @@ private:
 
     vk::ImageView m_texture_image_view;
     vk::Sampler m_texture_sampler;
+
+    vk::Image m_depth_image;
+    vk::DeviceMemory m_depth_image_memory;
+    vk::ImageView m_depth_image_view;
 
     // uniform buffers
     std::vector<vk::Buffer> m_uniform_buffers;
@@ -232,8 +243,9 @@ private:
         create_render_pass();
         create_descriptor_set_layout();
         create_graphics_pipeline();
-        create_framebuffers();
         create_command_pool();
+        create_depth_resources();
+        create_framebuffers();
         create_texture_image();
         create_texture_image_view();
         create_texture_sampler();
@@ -561,6 +573,16 @@ private:
         colour_attachment.initialLayout = vk::ImageLayout::eUndefined; // VK_IMAGE_LAYOUT_UNDEFINED;
         colour_attachment.finalLayout = vk::ImageLayout::ePresentSrcKHR; // VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+        vk::AttachmentDescription depth_attachment{};
+        depth_attachment.format = vk::Format::eD32Sfloat;
+        depth_attachment.samples = vk::SampleCountFlagBits::e1;
+        depth_attachment.loadOp = vk::AttachmentLoadOp::eClear;
+        depth_attachment.storeOp = vk::AttachmentStoreOp::eDontCare;
+        depth_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+        depth_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+        depth_attachment.initialLayout = vk::ImageLayout::eUndefined;
+        depth_attachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+
         // a render pass can have multiple subpasses
         // they are subsequent passes that depend on the contents of framebuffers in previous passes
         // every subpass references one or more previously described attachments
@@ -568,10 +590,15 @@ private:
         colour_attachment_ref.attachment = 0; // references attachment by index
         colour_attachment_ref.layout = vk::ImageLayout::eColorAttachmentOptimal; // VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL; // layout attachment should have during subpass
 
+        vk::AttachmentReference depth_attachment_ref{};
+        depth_attachment_ref.attachment = 1;
+        depth_attachment_ref.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+
         vk::SubpassDescription subpass{};
         subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics; // VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &colour_attachment_ref;
+        subpass.pDepthStencilAttachment = &depth_attachment_ref;
 
         // subpasses in a render pass automatically take care of image layout transitions
         // these transitions are controlled by subpass dependencies
@@ -580,15 +607,16 @@ private:
         dependency.srcSubpass = VK_SUBPASS_EXTERNAL; // refers to implicit subpass before
         dependency.dstSubpass = 0; // index to our subpass
 
-        dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput; // VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests;
         dependency.srcAccessMask = vk::AccessFlagBits::eNone;
-        dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput; // VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite; // VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests; // VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
 
+        std::array<vk::AttachmentDescription, 2> attachments = {colour_attachment, depth_attachment};
         vk::RenderPassCreateInfo render_pass_info{};
         render_pass_info.sType = vk::StructureType::eRenderPassCreateInfo; // VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        render_pass_info.attachmentCount = 1;
-        render_pass_info.pAttachments = &colour_attachment;
+        render_pass_info.attachmentCount = static_cast<unsigned>(attachments.size());
+        render_pass_info.pAttachments = attachments.data();
         render_pass_info.subpassCount = 1;
         render_pass_info.pSubpasses = &subpass;
         render_pass_info.dependencyCount = 1;
@@ -639,8 +667,8 @@ private:
 
         // to use these shaders we need to assign them to a specific pipeline stage
         vk::PipelineShaderStageCreateInfo vert_shader_stage_info{};
-        vert_shader_stage_info.sType = vk::StructureType::ePipelineShaderStageCreateInfo; // VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        vert_shader_stage_info.stage = vk::ShaderStageFlagBits::eVertex; //VK_SHADER_STAGE_VERTEX_BIT;
+        vert_shader_stage_info.sType = vk::StructureType::ePipelineShaderStageCreateInfo;
+        vert_shader_stage_info.stage = vk::ShaderStageFlagBits::eVertex;
 
         vert_shader_stage_info.module = vert_shader_module;
         vert_shader_stage_info.pName = "main"; // entrypoint
@@ -782,6 +810,15 @@ private:
         colour_blending.blendConstants[2] = 0.f;
         colour_blending.blendConstants[3] = 0.f;
 
+        vk::PipelineDepthStencilStateCreateInfo depth_stencil{};
+        depth_stencil.sType = vk::StructureType::ePipelineDepthStencilStateCreateInfo;
+        depth_stencil.depthTestEnable = true;
+        depth_stencil.depthWriteEnable = true;
+        depth_stencil.depthCompareOp = vk::CompareOp::eLess;
+        depth_stencil.depthBoundsTestEnable = false;
+        depth_stencil.minDepthBounds = 0.f;
+        depth_stencil.maxDepthBounds = 1.f;
+        depth_stencil.stencilTestEnable = false;
 
         vk::PipelineLayoutCreateInfo pipeline_layout_info{};
         pipeline_layout_info.sType = vk::StructureType::ePipelineLayoutCreateInfo;
@@ -818,6 +855,8 @@ private:
         pipeline_info.renderPass = m_render_pass;
         pipeline_info.subpass = 0;
 
+        pipeline_info.pDepthStencilState = &depth_stencil;
+
         // Vulkan allows you to create new pipelines derived from existing ones
         // we don't need this now so just set to null
         pipeline_info.basePipelineHandle = nullptr;
@@ -840,15 +879,15 @@ private:
 
         for(size_t i = 0; i < m_swapchain_image_views.size(); ++i)
         {
-            vk::ImageView attachments[] = { m_swapchain_image_views[i] };
+            std::array<vk::ImageView, 2> attachments = { m_swapchain_image_views[i], m_depth_image_view };
 
             // you can only use a framebuffer with a compatible render pass
             // meaning they use the same number and type of attachments
             vk::FramebufferCreateInfo framebuffer_info{};
             framebuffer_info.sType = vk::StructureType::eFramebufferCreateInfo;
             framebuffer_info.renderPass = m_render_pass;
-            framebuffer_info.attachmentCount = 1;
-            framebuffer_info.pAttachments = attachments;
+            framebuffer_info.attachmentCount = static_cast<unsigned>(attachments.size());
+            framebuffer_info.pAttachments = attachments.data();
             framebuffer_info.width = m_swapchain_extent.width;
             framebuffer_info.height = m_swapchain_extent.height;
             framebuffer_info.layers = 1;
@@ -881,6 +920,17 @@ private:
         {
             throw std::runtime_error("failed to create command pool!");
         }
+    }
+
+    void create_depth_resources()
+    {
+        create_image(m_swapchain_extent.width, m_swapchain_extent.height,
+                     vk::Format::eD32Sfloat, vk::ImageTiling::eOptimal,
+                     vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                     vk::MemoryPropertyFlagBits::eDeviceLocal,
+                     m_depth_image, m_depth_image_memory);
+
+        m_depth_image_view = create_image_view(m_depth_image, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth);
     }
 
     void create_texture_image()
@@ -926,7 +976,7 @@ private:
 
     void create_texture_image_view()
     {
-        m_texture_image_view = create_image_view(m_texture_image, vk::Format::eR8G8B8A8Srgb);
+        m_texture_image_view = create_image_view(m_texture_image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
     }
 
     void create_texture_sampler()
@@ -1018,14 +1068,14 @@ private:
         m_device.bindImageMemory(image, image_memory, 0);
     }
 
-    vk::ImageView create_image_view(vk::Image image, vk::Format format)
+    vk::ImageView create_image_view(vk::Image image, vk::Format format, vk::ImageAspectFlags aspect_flags)
     {
         vk::ImageViewCreateInfo view_info{};
         view_info.sType = vk::StructureType::eImageViewCreateInfo;
         view_info.image = image;
         view_info.viewType = vk::ImageViewType::e2D;
         view_info.format = format;
-        view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+        view_info.subresourceRange.aspectMask = aspect_flags;
         view_info.subresourceRange.baseMipLevel = 0;
         view_info.subresourceRange.levelCount = 1;
         view_info.subresourceRange.baseArrayLayer = 0;
@@ -1301,6 +1351,8 @@ private:
                 return i;
             }
         }
+
+        return 0;
     }
 
     void create_command_buffer()
@@ -1455,7 +1507,7 @@ private:
         float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
 
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.f), time * glm::radians(90.f), glm::vec3(0.f, 0.f, 1.f));
+        ubo.model = glm::rotate(glm::mat4(1.f),  0.f/* time * glm::radians(90.f) */, glm::vec3(0.f, 0.f, 1.f));
         ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.proj = glm::perspective(glm::radians(45.0f), m_swapchain_extent.width / (float) m_swapchain_extent.height, 0.1f, 10.0f);
 
@@ -1527,9 +1579,12 @@ private:
 
         m_device.destroyImage(m_texture_image, nullptr);
         m_device.freeMemory(m_texture_image_memory, nullptr);
-
         m_device.destroyImageView(m_texture_image_view, nullptr);
         m_device.destroySampler(m_texture_sampler, nullptr);
+
+        m_device.destroyImage(m_depth_image, nullptr);
+        m_device.freeMemory(m_depth_image_memory);
+        m_device.destroyImageView(m_depth_image_view, nullptr);
 
         m_device.destroyDescriptorPool(m_descriptor_pool, nullptr);
         m_device.destroyDescriptorSetLayout(m_descriptor_set_layout, nullptr);
@@ -1619,9 +1674,12 @@ private:
         renderpass_info.renderArea.offset = vk::Offset2D{0, 0};
         renderpass_info.renderArea.extent = m_swapchain_extent;
 
-        vk::ClearValue clear_colour = {{0.f, 0.f, 0.f, 1.f}};
-        renderpass_info.clearValueCount = 1;
-        renderpass_info.pClearValues = &clear_colour;
+        std::array<vk::ClearValue, 2> clear_values{};
+        clear_values[0].color = {0.f, 0.f, 0.f, 1.f};
+        clear_values[1].depthStencil = vk::ClearDepthStencilValue{1.f, 0};
+
+        renderpass_info.clearValueCount = static_cast<unsigned>(clear_values.size());
+        renderpass_info.pClearValues = clear_values.data();
 
         // all functions that record commands cna be recognized by their vk::Cmd prefix
         // they all return void, so no error handling until the recording is finished

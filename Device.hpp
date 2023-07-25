@@ -5,7 +5,7 @@
 class Device
 {
 public:
-    Device(const vk::Instance& instance, const vk::SurfaceKHR& surface, vk::DeviceCreateInfo create_info);
+    Device(const vk::Instance& instance, const vk::SurfaceKHR& surface, vk::DeviceCreateInfo create_info, vk::Extent2D extent);
     ~Device();
 
     void draw_frame(u32 current_frame);
@@ -13,21 +13,21 @@ public:
 private:
     vk::PhysicalDevice m_physical_device;
     vk::Device m_logical_device;
+    const vk::SurfaceKHR* m_surface;
+
+    // swapchain related things
+    vk::SwapchainKHR m_swapchain;
+    vk::Format m_swapchain_image_format;
+    vk::Extent2D m_swapchain_extent;
+    std::vector<vk::Image> m_swapchain_images;
+    std::vector<vk::ImageView> m_swapchain_image_views;
+    std::vector<vk::Framebuffer> m_swapchain_framebuffers;
 
     // queues
     vk::Queue m_graphics_queue;
     vk::Queue m_present_queue;
 
-    // required extensions the device should have
-    const std::vector<const char *> m_device_extensions =
-    {
-            VK_KHR_SWAPCHAIN_EXTENSION_NAME
-    };
-
-    void pick_physical_device(const vk::Instance& instance);
-    void create_device();
-    bool is_device_suitable(vk::PhysicalDevice device);
-    int rate_device_suitability(vk::PhysicalDevice device);
-    bool check_device_extension_support(vk::PhysicalDevice device);
+    void create_swapchain(vk::Extent2D extent);
+    void cleanup_swapchain();
 };
 

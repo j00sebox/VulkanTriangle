@@ -126,7 +126,11 @@ void Engine::create_device()
         create_info.enabledLayerCount = 0;
     }
 
-    m_device = new Device(m_instance, m_surface, create_info);
+    // get size for framebuffers
+    int width, height;
+    glfwGetFramebufferSize(m_window, &width, &height);
+    vk::Extent2D extent = { static_cast<unsigned>(width), static_cast<unsigned>(height) };
+    m_device = new Device(m_instance, m_surface, create_info, extent);
 }
 
 bool Engine::check_validation_layer_support()

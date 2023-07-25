@@ -1,61 +1,11 @@
 #include "Device.hpp"
+#include "DeviceHelper.hpp"
 
-// it is possible for the graphics and present family to not overlap
-struct QueueFamilyIndices
+Device::Device(const vk::Instance& instance, const vk::SurfaceKHR& surface, vk::DeviceCreateInfo create_info, vk::Extent2D extent) :
+    m_surface(&surface)
 {
-    std::optional<unsigned> graphics_family;
-    std::optional<unsigned> present_family;
-
-    [[nodiscard]] bool is_complete() const { return (graphics_family.has_value() && present_family.has_value()); }
-};
-
-struct SwapChainSupportDetails
-{
-    vk::SurfaceCapabilitiesKHR capabilities;
-    std::vector<vk::SurfaceFormatKHR> formats;
-    std::vector<vk::PresentModeKHR> present_modes;
-};
-
-static QueueFamilyIndices find_queue_families(vk::PhysicalDevice device, vk::SurfaceKHR surface)
-{
-    QueueFamilyIndices indices;
-    unsigned queue_family_count = 0;
-    device.getQueueFamilyProperties(&queue_family_count, nullptr);
-
-    if (queue_family_count == 0) return indices;
-
-    std::vector<vk::QueueFamilyProperties> queue_families(queue_family_count);
-    device.getQueueFamilyProperties(&queue_family_count, queue_families.data());
-
-    int i = 0;
-    for (const auto &queue_family: queue_families) {
-        if (queue_family.queueFlags & vk::QueueFlagBits::eGraphics)
-        {
-            indices.graphics_family = i;
-        }
-
-        // it is very likely that these will be the same family
-        // can add logic to prefer queue families that contain both
-        vk::Bool32 present_support = false;
-        vk::Result result = device.getSurfaceSupportKHR(i, surface, &present_support);
-
-        if (present_support)
-        {
-            indices.present_family = i;
-        }
-
-        if (indices.is_complete()) break;
-
-        ++i;
-    }
-
-    return indices;
-}
-
-Device::Device(const vk::Instance& instance, const vk::SurfaceKHR& surface, vk::DeviceCreateInfo create_info)
-{
-    pick_physical_device(instance);
-    QueueFamilyIndices indices = find_queue_families(m_physical_device, surface);
+    m_physical_device = DeviceHelper::pick_physical_device(instance);
+    QueueFamilyIndices indices = DeviceHelper::find_queue_families(m_physical_device, surface);
 
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
     std::set<unsigned> unique_queue_families = {indices.graphics_family.value(), indices.present_family.value()};
@@ -86,8 +36,8 @@ Device::Device(const vk::Instance& instance, const vk::SurfaceKHR& surface, vk::
     // previous versions of Vulkan had a distinction between instance and device specific validation layers
     // meaning enabledLayerCount and ppEnabledLayerNames field are ignored
     // it is still a good idea to set them to be compatible with older versions
-    create_info.enabledExtensionCount = static_cast<unsigned>(m_device_extensions.size());
-    create_info.ppEnabledExtensionNames = m_device_extensions.data();
+    create_info.enabledExtensionCount = static_cast<unsigned>(g_device_extensions.size());
+    create_info.ppEnabledExtensionNames = g_device_extensions.data();
 
     // takes physical device to interface with, the queue and the usage info
     if (m_physical_device.createDevice(&create_info, nullptr, &m_logical_device) != vk::Result::eSuccess)
@@ -98,10 +48,14 @@ Device::Device(const vk::Instance& instance, const vk::SurfaceKHR& surface, vk::
     // since we only set 1 queue we can just index at 0
     m_logical_device.getQueue(indices.graphics_family.value(), 0, &m_graphics_queue);
     m_logical_device.getQueue(indices.present_family.value(), 0, &m_present_queue);
+
+    create_swapchain(extent);
 }
 
 Device::~Device()
 {
+    cleanup_swapchain();
+
     // devices don't interact directly with instances
     m_logical_device.destroy();
 }
@@ -110,102 +64,104 @@ void Device::draw_frame(u32 current_frame)
 {
 }
 
-void Device::pick_physical_device(const vk::Instance& instance)
+void Device::create_swapchain(vk::Extent2D extent)
 {
-    unsigned device_count = 0;
-    vk::Result result = instance.enumeratePhysicalDevices(&device_count, nullptr);
+    SwapChainSupportDetails swap_chain_support = DeviceHelper::query_swap_chain_support(m_physical_device, *m_surface);
 
-    if (device_count == 0)
+    vk::SurfaceFormatKHR surface_format = DeviceHelper::choose_swap_surface_format(swap_chain_support.formats);
+    vk::PresentModeKHR present_mode = DeviceHelper::choose_swap_present_mode(swap_chain_support.present_modes);
+    vk::Extent2D actual_extent = DeviceHelper::choose_swap_extent(swap_chain_support.capabilities, extent);
+
+    // it is usually recommended to have 1 extra than the min to avoid GPU hangs
+    unsigned image_count = swap_chain_support.capabilities.minImageCount + 1;
+
+    if((swap_chain_support.capabilities.maxImageCount > 0) && (image_count > swap_chain_support.capabilities.maxImageCount))
     {
-        throw std::runtime_error("failed to find GPUs with Vulkan support!");
+        image_count = swap_chain_support.capabilities.maxImageCount;
     }
 
-    std::vector<vk::PhysicalDevice> devices(device_count);
+    vk::SwapchainCreateInfoKHR create_info{};
+    create_info.sType = vk::StructureType::eSwapchainCreateInfoKHR; // VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    create_info.surface = *m_surface;
 
-    // keeps track of devices and their score to pick the best option
-    std::multimap<int, vk::PhysicalDevice> candidates;
-    result = instance.enumeratePhysicalDevices(&device_count, devices.data());
+    // swap chain image details
+    create_info.minImageCount = image_count;
+    create_info.imageFormat = surface_format.format;
+    create_info.imageColorSpace = surface_format.colorSpace;
+    create_info.imageExtent = actual_extent;
+    create_info.imageArrayLayers = 1; // amount of layers each image consists of
+    create_info.imageUsage = vk::ImageUsageFlagBits::eColorAttachment; // VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-    for (const auto& device: devices)
+    QueueFamilyIndices indices = DeviceHelper::find_queue_families(m_physical_device, *m_surface);
+    unsigned queue_family_indices[] = { indices.graphics_family.value(), indices.present_family.value() };
+
+    if(indices.graphics_family != indices.present_family)
     {
-        if (is_device_suitable(device))
-        {
-            int score = rate_device_suitability(device);
-            candidates.insert(std::make_pair(score, device));
-        }
-    }
-
-    if (candidates.rbegin()->first > 0)
-    {
-        m_physical_device = candidates.rbegin()->second;
+        // images can be used across multiple queue families without explicit ownership transfers
+        // requires to state which queue families will be shared
+        create_info.imageSharingMode = vk::SharingMode::eConcurrent; // VK_SHARING_MODE_CONCURRENT;
+        create_info.queueFamilyIndexCount = 2;
+        create_info.pQueueFamilyIndices = queue_family_indices;
     }
     else
     {
-        throw std::runtime_error("failed to find a suitable GPU!");
+        // image owned by one queue family
+        // ownership must be explicitly transferred before using it in another one
+        create_info.imageSharingMode = vk::SharingMode::eExclusive; // VK_SHARING_MODE_EXCLUSIVE;
+
+        // optional
+        create_info.queueFamilyIndexCount = 0;
+        create_info.pQueueFamilyIndices = nullptr;
     }
-}
 
-bool Device::is_device_suitable(vk::PhysicalDevice device)
-{
-//    QueueFamilyIndices indices = find_queue_families(device);
-//
-//    bool surface_supported = device.getSurfaceSupportKHR(indices.graphics_family.value(), m_surface);
-//
-//    if(!surface_supported) return false;
+    // can set up some kind of transform you want to apply to the images
+    // set it to current transform to prevent that
+    create_info.preTransform = swap_chain_support.capabilities.currentTransform;
 
-    return check_device_extension_support(device);
-//    bool swap_chain_adequate = false;
-//
-//    if (extensions_supported)
-//    {
-//        SwapChainSupportDetails swap_chain_support = query_swap_chain_support(device);
-//
-//        swap_chain_adequate = !swap_chain_support.formats.empty() && !swap_chain_support.present_modes.empty();
-//    }
+    // specifies if alpha field should be used for blending
+    // almost always want to ignore the alpha channel
+    create_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque; // VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 
-    //return  /* indices.is_complete()  && */ extensions_supported && swap_chain_adequate;
-}
+    create_info.presentMode = present_mode;
+    create_info.clipped = VK_TRUE; // don't care about the colour of the pixels being obscured by another window
 
-int Device::rate_device_suitability(vk::PhysicalDevice device)
-{
-    int score = 0;
-    vk::PhysicalDeviceProperties device_properties;
-    vk::PhysicalDeviceFeatures device_features;
+    // if the swap chain becomes invalid during runtime (ex. window resize)
+    create_info.oldSwapchain = VK_NULL_HANDLE;
 
-    device.getProperties(&device_properties);
-    device.getFeatures(&device_features);
-
-    // large performance advantage
-    if (device_properties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
+    if(m_logical_device.createSwapchainKHR(&create_info, nullptr, &m_swapchain) != vk::Result::eSuccess)
     {
-        score += 1000;
+        throw std::runtime_error("unable to create swapchain!");
     }
 
-    // max possible size of textures
-    score += device_properties.limits.maxImageDimension2D;
+    // we only specified a minimum amount of images to create, the implementation is capable of making more
+    vk::Result result = m_logical_device.getSwapchainImagesKHR(m_swapchain, &image_count, nullptr);
+    m_swapchain_images.resize(image_count);
 
-    // no geometry shader, no deal Howie
-    if (!device_features.geometryShader) {
-        return 0;
-    }
+    result = m_logical_device.getSwapchainImagesKHR(m_swapchain, &image_count, m_swapchain_images.data());
 
-    return score;
+    // need these for later
+    m_swapchain_image_format = surface_format.format;
+    m_swapchain_extent = actual_extent;
 }
 
-bool Device::check_device_extension_support(vk::PhysicalDevice device)
+void Device::cleanup_swapchain()
 {
-    unsigned extension_count = 0;
-    vk::Result result = device.enumerateDeviceExtensionProperties(nullptr, &extension_count, nullptr);
-
-    std::vector<vk::ExtensionProperties> available_extensions(extension_count);
-    result = device.enumerateDeviceExtensionProperties(nullptr, &extension_count, available_extensions.data());
-
-    std::set<std::string> required_extensions(m_device_extensions.begin(), m_device_extensions.end());
-
-    for(const auto& extension : available_extensions)
+    for(auto framebuffer : m_swapchain_framebuffers)
     {
-        required_extensions.erase(extension.extensionName);
+        m_logical_device.destroyFramebuffer(framebuffer, nullptr);
     }
 
-    return required_extensions.empty();
+    for(auto image_view : m_swapchain_image_views)
+    {
+        m_logical_device.destroyImageView(image_view, nullptr);
+    }
+
+//    m_device.destroyImage(m_depth_image, nullptr);
+//    m_device.freeMemory(m_depth_image_memory);
+//    m_device.destroyImageView(m_depth_image_view, nullptr);
+
+    m_logical_device.destroySwapchainKHR(m_swapchain, nullptr);
 }
+
+
+

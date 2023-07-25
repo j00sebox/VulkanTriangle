@@ -1,6 +1,6 @@
-
 STB_INCLUDE_PATH = /home/josh/Repos/stb
-CFLAGS = -std=c++20 -O2 -I$(STB_INCLUDE_PATH)
+TINY_OBJ_LOADER_INCLUDE_PATH = /home/josh/Repos/tinyobjloader
+CFLAGS = -std=c++20 -O2 -I$(STB_INCLUDE_PATH) -I$(TINY_OBJ_LOADER_INCLUDE_PATH)
 
 LDFLAGS = -lglfw -lvulkan -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi
 

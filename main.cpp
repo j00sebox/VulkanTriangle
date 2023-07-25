@@ -24,6 +24,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
+
 #include "Vertex.hpp"
 
 // interleaving vertex attributes
@@ -125,6 +128,8 @@ private:
     vk::PipelineLayout m_pipeline_layout;
     vk::Pipeline m_graphics_pipeline;
 
+    std::vector<Vertex> m_vertices;
+    std::vector<unsigned> m_indices;
     vk::Buffer m_vertex_buffer;
     vk::DeviceMemory m_vertex_buffer_memory;
     vk::Buffer m_index_buffer;
@@ -170,6 +175,9 @@ private:
 
     const uint32_t WIDTH = 800;
     const uint32_t HEIGHT = 600;
+
+    const std::string MODEL_PATH = "models/viking_room.obj";
+    const std::string TEXTURE_PATH = "textures/viking_room.png";
 
     // allow multiple frames to be in-flight
     // this means we allow a new frame to start being rendered without interfering with one being presented
@@ -249,6 +257,7 @@ private:
         create_texture_image();
         create_texture_image_view();
         create_texture_sampler();
+        load_model();
         create_vertex_buffer();
         create_index_buffer();
         create_uniform_buffers();
@@ -936,7 +945,7 @@ private:
     void create_texture_image()
     {
         int width, height, channels;
-        stbi_uc* pixels = stbi_load("textures/statue_face.jpg", &width, &height, &channels, STBI_rgb_alpha);
+        stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &width, &height, &channels, STBI_rgb_alpha);
 
         vk::DeviceSize image_size = width * height * 4;
 
@@ -1090,9 +1099,46 @@ private:
         return image_view;
     }
 
+    void load_model()
+    {
+        tinyobj::attrib_t attrib;
+        std::vector<tinyobj::shape_t> shapes;
+        std::vector<tinyobj::material_t> materials;
+        std::string warn, err;
+
+        if(!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str()))
+        {
+            throw std::runtime_error(warn + err);
+        }
+
+        for(const auto& shape : shapes)
+        {
+            for(const auto& index : shape.mesh.indices)
+            {
+                Vertex vertex{};
+
+                vertex.position =
+                {
+                        attrib.vertices[3 * index.vertex_index + 0],
+                        attrib.vertices[3 * index.vertex_index + 1],
+                        attrib.vertices[3 * index.vertex_index + 2]
+                };
+
+                vertex.uv =
+                {
+                        attrib.texcoords[2 * index.texcoord_index + 0],
+                        1.f - attrib.texcoords[2 * index.texcoord_index + 1],
+                };
+
+                m_vertices.push_back(vertex);
+                m_indices.push_back(m_indices.size());
+            }
+        }
+    }
+
     void create_vertex_buffer()
     {
-        vk::DeviceSize buffer_size = sizeof(g_vertices[0]) * g_vertices.size();
+        vk::DeviceSize buffer_size = sizeof(m_vertices[0]) * m_vertices.size();
 
         // staging buffer is the temporary buffer on CPU memory that gets transferred to the GPU
         vk::Buffer staging_buffer;
@@ -1104,7 +1150,7 @@ private:
 
         //  map the buffer memory into CPU accessible memory
         void* data = m_device.mapMemory(staging_buffer_memory, 0, buffer_size);
-        memcpy(data, g_vertices.data(), (size_t)buffer_size);
+        memcpy(data, m_vertices.data(), (size_t)buffer_size);
         m_device.unmapMemory(staging_buffer_memory);
 
         create_buffer(buffer_size, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
@@ -1119,7 +1165,7 @@ private:
 
     void create_index_buffer()
     {
-        vk::DeviceSize buffer_size = sizeof(g_indices[0]) * g_indices.size();
+        vk::DeviceSize buffer_size = sizeof(m_indices[0]) * m_indices.size();
 
         vk::Buffer staging_buffer;
         vk::DeviceMemory staging_buffer_memory;
@@ -1130,7 +1176,7 @@ private:
 
         //  map the buffer memory into CPU accessible memory
         void* data = m_device.mapMemory(staging_buffer_memory, 0, buffer_size);
-        memcpy(data, g_indices.data(), (size_t)buffer_size);
+        memcpy(data, m_indices.data(), (size_t)buffer_size);
         m_device.unmapMemory(staging_buffer_memory);
 
         create_buffer(buffer_size, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
@@ -1507,7 +1553,7 @@ private:
         float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
 
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.f),  0.f/* time * glm::radians(90.f) */, glm::vec3(0.f, 0.f, 1.f));
+        ubo.model = glm::rotate(glm::mat4(1.f), time * glm::radians(90.f), glm::vec3(0.f, 0.f, 1.f));
         ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.proj = glm::perspective(glm::radians(45.0f), m_swapchain_extent.width / (float) m_swapchain_extent.height, 0.1f, 10.0f);
 
@@ -1532,7 +1578,12 @@ private:
             m_device.destroyImageView(image_view, nullptr);
         }
 
+        m_device.destroyImage(m_depth_image, nullptr);
+        m_device.freeMemory(m_depth_image_memory);
+        m_device.destroyImageView(m_depth_image_view, nullptr);
+
         m_device.destroySwapchainKHR(m_swapchain, nullptr);
+
     }
 
     // it's possible for the window surface to change such that the swapchain is no longer compatible
@@ -1558,6 +1609,7 @@ private:
 
         create_swapchain();
         create_image_views();
+        create_depth_resources();
         create_framebuffers();
     }
 
@@ -1581,10 +1633,6 @@ private:
         m_device.freeMemory(m_texture_image_memory, nullptr);
         m_device.destroyImageView(m_texture_image_view, nullptr);
         m_device.destroySampler(m_texture_sampler, nullptr);
-
-        m_device.destroyImage(m_depth_image, nullptr);
-        m_device.freeMemory(m_depth_image_memory);
-        m_device.destroyImageView(m_depth_image_view, nullptr);
 
         m_device.destroyDescriptorPool(m_descriptor_pool, nullptr);
         m_device.destroyDescriptorSetLayout(m_descriptor_set_layout, nullptr);
@@ -1720,7 +1768,7 @@ private:
         // first index: offset into the vertex buffer
         // first instance
         // vkCmdDraw(command_buffer, static_cast<unsigned>(g_vertices.size()), 1, 0, 0);
-        command_buffer.drawIndexed(static_cast<unsigned>(g_indices.size()), 1, 0, 0, 0);
+        command_buffer.drawIndexed(static_cast<unsigned>(m_indices.size()), 1, 0, 0, 0);
 
         command_buffer.endRenderPass();
 

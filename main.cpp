@@ -26,12 +26,11 @@
 #include "Vertex.hpp"
 
 // interleaving vertex attributes
-const std::vector<Vertex> g_vertices =
-{
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+const std::vector<Vertex> g_vertices = {
+         {{-0.5f, -0.5f}, {1.0f, 0.0f}},
+         {{0.5f, -0.5f}, {0.0f, 0.0f}},
+         {{0.5f, 0.5f}, {0.0f, 1.0f}},
+         {{-0.5f, 0.5f}, {1.0f, 1.0f}}
 };
 
 const std::vector<unsigned> g_indices =
@@ -129,6 +128,9 @@ private:
     // pixels within an image are known as texels
     vk::Image m_texture_image;
     vk::DeviceMemory m_texture_image_memory;
+
+    vk::ImageView m_texture_image_view;
+    vk::Sampler m_texture_sampler;
 
     // uniform buffers
     std::vector<vk::Buffer> m_uniform_buffers;
@@ -233,6 +235,8 @@ private:
         create_framebuffers();
         create_command_pool();
         create_texture_image();
+        create_texture_image_view();
+        create_texture_sampler();
         create_vertex_buffer();
         create_index_buffer();
         create_uniform_buffers();
@@ -377,6 +381,7 @@ private:
         }
 
         vk::PhysicalDeviceFeatures device_features{};
+        device_features.samplerAnisotropy = true;
 
         vk::DeviceCreateInfo create_info{};
         create_info.sType = vk::StructureType::eDeviceCreateInfo; // VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -604,10 +609,19 @@ private:
         ubo_layout_binding.stageFlags = vk::ShaderStageFlagBits::eVertex;
         ubo_layout_binding.pImmutableSamplers = nullptr; // only relevant for image sampling descriptors
 
+        vk::DescriptorSetLayoutBinding sampler_layout_binding{};
+        sampler_layout_binding.binding = 1;
+        sampler_layout_binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+        sampler_layout_binding.descriptorCount = 1;
+        sampler_layout_binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+        sampler_layout_binding.pImmutableSamplers = nullptr;
+
+        std::array<vk::DescriptorSetLayoutBinding, 2> bindings = {ubo_layout_binding, sampler_layout_binding};
+
         vk::DescriptorSetLayoutCreateInfo layout_info{};
         layout_info.sType = vk::StructureType::eDescriptorSetLayoutCreateInfo;
-        layout_info.bindingCount = 1;
-        layout_info.pBindings = &ubo_layout_binding;
+        layout_info.bindingCount = static_cast<unsigned>(bindings.size());
+        layout_info.pBindings = bindings.data();
 
         if(m_device.createDescriptorSetLayout(&layout_info, nullptr, &m_descriptor_set_layout) != vk::Result::eSuccess)
         {
@@ -910,6 +924,47 @@ private:
         m_device.freeMemory(staging_buffer_memory, nullptr);
     }
 
+    void create_texture_image_view()
+    {
+        m_texture_image_view = create_image_view(m_texture_image, vk::Format::eR8G8B8A8Srgb);
+    }
+
+    void create_texture_sampler()
+    {
+        vk::SamplerCreateInfo sampler_info{};
+        sampler_info.sType = vk::StructureType::eSamplerCreateInfo;
+        sampler_info.magFilter = vk::Filter::eLinear;
+        sampler_info.minFilter = vk::Filter::eLinear;
+
+        sampler_info.addressModeU = vk::SamplerAddressMode::eRepeat;
+        sampler_info.addressModeV = vk::SamplerAddressMode::eRepeat;
+        sampler_info.addressModeW = vk::SamplerAddressMode::eRepeat;
+
+
+        vk::PhysicalDeviceProperties properties{};
+        m_physical_device.getProperties(&properties);
+
+        sampler_info.anisotropyEnable = true;
+        sampler_info.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+
+        sampler_info.borderColor = vk::BorderColor::eIntOpaqueBlack;
+
+        sampler_info.unnormalizedCoordinates = false;
+
+        sampler_info.compareEnable = false;
+        sampler_info.compareOp = vk::CompareOp::eAlways;
+
+        sampler_info.mipmapMode = vk::SamplerMipmapMode::eLinear;
+        sampler_info.mipLodBias = 0.f;
+        sampler_info.minLod = 0.f;
+        sampler_info.maxLod = 0.f;
+
+        if(m_device.createSampler(&sampler_info, nullptr, &m_texture_sampler) != vk::Result::eSuccess)
+        {
+            throw std::runtime_error("failed to create texture sampler!");
+        }
+    }
+
     void create_image(unsigned width, unsigned height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage,
                       vk::MemoryPropertyFlags properties, vk::Image& image, vk::DeviceMemory& image_memory)
     {
@@ -961,6 +1016,28 @@ private:
         }
 
         m_device.bindImageMemory(image, image_memory, 0);
+    }
+
+    vk::ImageView create_image_view(vk::Image image, vk::Format format)
+    {
+        vk::ImageViewCreateInfo view_info{};
+        view_info.sType = vk::StructureType::eImageViewCreateInfo;
+        view_info.image = image;
+        view_info.viewType = vk::ImageViewType::e2D;
+        view_info.format = format;
+        view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+        view_info.subresourceRange.baseMipLevel = 0;
+        view_info.subresourceRange.levelCount = 1;
+        view_info.subresourceRange.baseArrayLayer = 0;
+        view_info.subresourceRange.layerCount = 1;
+
+        vk::ImageView image_view;
+        if(vk::Result result = m_device.createImageView(&view_info, nullptr, &image_view); result != vk::Result::eSuccess)
+        {
+            throw std::runtime_error("failed to create texture image view!");
+        }
+
+        return image_view;
     }
 
     void create_vertex_buffer()
@@ -1043,17 +1120,20 @@ private:
     {
         // first describe which descriptor types pur descriptor sets use and how many
         // we allocate one of these descriptors for every frame
-        vk::DescriptorPoolSize pool_size{};
-        pool_size.type = vk::DescriptorType::eUniformBuffer;
-        pool_size.descriptorCount = static_cast<unsigned>(MAX_FRAMES_IN_FLIGHT);
+        std::array<vk::DescriptorPoolSize, 2> pool_sizes{};
+        pool_sizes[0].type = vk::DescriptorType::eUniformBuffer;
+        pool_sizes[0].descriptorCount = static_cast<unsigned>(MAX_FRAMES_IN_FLIGHT);
+
+        pool_sizes[1].type = vk::DescriptorType::eCombinedImageSampler;
+        pool_sizes[1].descriptorCount = static_cast<unsigned>(MAX_FRAMES_IN_FLIGHT);
 
         vk::DescriptorPoolCreateInfo pool_info{};
         pool_info.sType = vk::StructureType::eDescriptorPoolCreateInfo;
-        pool_info.poolSizeCount = 1;
-        pool_info.pPoolSizes = &pool_size;
+        pool_info.poolSizeCount = static_cast<unsigned>(pool_sizes.size());
+        pool_info.pPoolSizes = pool_sizes.data();
 
         // describe max amount of individual descriptors that may be allocated
-        pool_info.maxSets = static_cast<unsigned>(MAX_FRAMES_IN_FLIGHT);\
+        pool_info.maxSets = static_cast<unsigned>(MAX_FRAMES_IN_FLIGHT);
 
         if(m_device.createDescriptorPool(&pool_info, nullptr, &m_descriptor_pool) != vk::Result::eSuccess)
         {
@@ -1087,25 +1167,38 @@ private:
             vk::DescriptorBufferInfo buffer_info{};
             buffer_info.buffer = m_uniform_buffers[i];
             buffer_info.offset = 0;
-            buffer_info.range = sizeof(UniformBufferObject); // or vk::_WHOLE_SIZE
+            buffer_info.range = sizeof(UniformBufferObject); // or VK_WHOLE_SIZE
 
-            // the config is updated using the vk::UpdateDescriptorSets function
-            vk::WriteDescriptorSet descriptor_write{};
-            descriptor_write.sType = vk::StructureType::eWriteDescriptorSet;
-            descriptor_write.dstSet = m_descriptor_sets[i]; // descriptor set to update
-            descriptor_write.dstBinding = 0; // index binding 0
-            descriptor_write.dstArrayElement = 0;
+            vk::DescriptorImageInfo image_info{};
+            image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+            image_info.imageView = m_texture_image_view;
+            image_info.sampler = m_texture_sampler;
 
-            descriptor_write.descriptorType = vk::DescriptorType::eUniformBuffer;
-            descriptor_write.descriptorCount = 1; // how many array elements to update
+            // the config is updated using the vkUpdateDescriptorSets function
+            std::array<vk::WriteDescriptorSet, 2> descriptor_writes{};
+            descriptor_writes[0].sType = vk::StructureType::eWriteDescriptorSet;
+            descriptor_writes[0].dstSet = m_descriptor_sets[i]; // descriptor set to update
+            descriptor_writes[0].dstBinding = 0; // index binding 0
+            descriptor_writes[0].dstArrayElement = 0;
 
-            descriptor_write.pBufferInfo = &buffer_info;
+            descriptor_writes[0].descriptorType = vk::DescriptorType::eUniformBuffer;
+            descriptor_writes[0].descriptorCount = 1; // how many array elements to update
+
+            descriptor_writes[0].pBufferInfo = &buffer_info;
 
             // used for descriptors that reference image data
-            descriptor_write.pImageInfo = nullptr;
-            descriptor_write.pTexelBufferView = nullptr;
+            descriptor_writes[0].pImageInfo = nullptr;
+            descriptor_writes[0].pTexelBufferView = nullptr;
 
-            m_device.updateDescriptorSets(1, &descriptor_write, 0, nullptr);
+            descriptor_writes[1].sType = vk::StructureType::eWriteDescriptorSet;
+            descriptor_writes[1].dstSet = m_descriptor_sets[i]; // descriptor set to update
+            descriptor_writes[1].dstBinding = 1;
+            descriptor_writes[1].dstArrayElement = 0;
+            descriptor_writes[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+            descriptor_writes[1].descriptorCount = 1; // how many array elements to update
+            descriptor_writes[1].pImageInfo = &image_info;
+
+            m_device.updateDescriptorSets(static_cast<unsigned>(descriptor_writes.size()), descriptor_writes.data(), 0, nullptr);
         }
     }
 
@@ -1434,6 +1527,9 @@ private:
 
         m_device.destroyImage(m_texture_image, nullptr);
         m_device.freeMemory(m_texture_image_memory, nullptr);
+
+        m_device.destroyImageView(m_texture_image_view, nullptr);
+        m_device.destroySampler(m_texture_sampler, nullptr);
 
         m_device.destroyDescriptorPool(m_descriptor_pool, nullptr);
         m_device.destroyDescriptorSetLayout(m_descriptor_set_layout, nullptr);

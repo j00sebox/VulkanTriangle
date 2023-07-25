@@ -7,7 +7,7 @@
 struct Vertex
 {
     glm::vec2 position;
-    glm::vec3 colour;
+    glm::vec2 uv;
 
     static vk::VertexInputBindingDescription get_binding_description()
     {
@@ -34,8 +34,8 @@ struct Vertex
         // colour attribute
         attribute_descriptions[1].binding = 0;
         attribute_descriptions[1].location = 1;
-        attribute_descriptions[1].format = vk::Format::eR32G32B32Sfloat;
-        attribute_descriptions[1].offset = offsetof(Vertex, colour);
+        attribute_descriptions[1].format = vk::Format::eR32G32Sfloat;
+        attribute_descriptions[1].offset = offsetof(Vertex, uv);
 
         return attribute_descriptions;
     }

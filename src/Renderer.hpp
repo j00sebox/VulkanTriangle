@@ -1,22 +1,25 @@
 #pragma once
-
 #include "config.hpp"
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include "Scene.hpp"
 #include "GPUResources.hpp"
+#include "Components.hpp"
 #include "OBJLoader.hpp"
 
 class Renderer
 {
 public:
-    Renderer(GLFWwindow* window);
+    explicit Renderer(GLFWwindow* window);
     ~Renderer();
 
-    void render();
-    void load_model(const OBJLoader& loader);
-    void draw_frame(u32 current_frame);
+    void render(Scene* scene);
+    Model load_model(const OBJLoader& loader);
+    void draw_frame(u32 current_frame, const Mesh& mesh);
+    void start_renderpass(vk::CommandBuffer command_buffer, u32 image_index);
+    void end_renderpass(vk::CommandBuffer command_buffer);
     void recreate_swapchain();
 
     // resource creation
@@ -25,6 +28,8 @@ public:
     void create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags  properties, vk::Buffer& buffer, vk::DeviceMemory& buffer_memory);
     vk::ImageView create_image_view(const vk::Image& image, vk::Format format, vk::ImageAspectFlags image_aspect);
     vk::ShaderModule create_shader_module(const std::vector<char>& code);
+
+    void destroy_buffer(Buffer& buffer);
 
     void wait_for_device_idle() { m_logical_device.waitIdle(); }
 

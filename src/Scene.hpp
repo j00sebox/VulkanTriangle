@@ -1,14 +1,14 @@
+#pragma once
 #include "config.hpp"
-
-struct Model;
+#include "Components.hpp"
 
 class Scene
 {
 public:
-    Scene();
-
+    Scene() = default;
     void update();
+    void add_model(const Model& model);
+    void add_model(Model&& model);
 
-private:
-    std::vector<Model> m_models;
+    std::vector<Model> models;
 };

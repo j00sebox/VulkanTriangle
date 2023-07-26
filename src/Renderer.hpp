@@ -1,35 +1,42 @@
 #pragma once
 
 #include "config.hpp"
-#include "Vertex.hpp"
+
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
+
 #include "GPUResources.hpp"
+#include "OBJLoader.hpp"
 
-#include <vk_mem_alloc.h>
-
-class Device
+class Renderer
 {
 public:
-    Device(const vk::Instance& instance, const vk::SurfaceKHR& surface, vk::DeviceCreateInfo create_info, vk::Extent2D extent);
-    ~Device();
+    Renderer(GLFWwindow* window);
+    ~Renderer();
 
+    void render();
+    void load_model(const OBJLoader& loader);
     void draw_frame(u32 current_frame);
-    void recreate_swapchain(vk::Extent2D extent);
+    void recreate_swapchain();
 
     // resource creation
     void create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image& image, vk::DeviceMemory& image_memory);
+    void create_buffer(const BufferCreationInfo& buffer_creation, Buffer& buffer);
     void create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags  properties, vk::Buffer& buffer, vk::DeviceMemory& buffer_memory);
-    void create_vertex_buffer(const std::vector<Vertex>& vertices);
-    void create_index_buffer(const std::vector<u32>& indices);
     vk::ImageView create_image_view(const vk::Image& image, vk::Format format, vk::ImageAspectFlags image_aspect);
     vk::ShaderModule create_shader_module(const std::vector<char>& code);
 
-    void wait_for_idle() { m_logical_device.waitIdle(); }
+    void wait_for_device_idle() { m_logical_device.waitIdle(); }
 
 private:
+    GLFWwindow* m_window;
+    vk::Instance m_instance;
+    vk::DebugUtilsMessengerEXT m_debug_messenger;
+    vk::DispatchLoaderDynamic m_dispatch_loader;
+    vk::SurfaceKHR m_surface;
     vk::PhysicalDevice m_physical_device;
     vk::Device m_logical_device;
     VmaAllocator m_allocator;
-    const vk::SurfaceKHR* m_surface;
 
     // swapchain related things
     vk::SwapchainKHR m_swapchain;
@@ -77,11 +84,8 @@ private:
     const std::string TEXTURE_PATH = "../textures/viking_room.png";
 
     // TODO: remove
-    vk::Buffer m_vertex_buffer;
-    vk::DeviceMemory m_vertex_buffer_memory;
-    VmaAllocation m_vertex_buffer_vma;
-    vk::Buffer m_index_buffer;
-    vk::DeviceMemory m_index_buffer_memory;
+    Buffer m_vertex_buffer;
+    Buffer m_index_buffer;
     u32 index_count;
 
     // uniform buffers
@@ -89,7 +93,10 @@ private:
     std::vector<vk::DeviceMemory> m_uniform_buffers_memory;
     std::vector<void*> m_uniform_buffers_mapped;
 
-    void create_swapchain(vk::Extent2D extent);
+    void create_instance();
+    void create_surface();
+    void create_device();
+    void create_swapchain();
     void create_render_pass();
     void create_descriptor_set_layout();
     void create_graphics_pipeline();
@@ -115,5 +122,39 @@ private:
 
     vk::CommandBuffer begin_single_time_commands();
     void end_single_time_commands(vk::CommandBuffer command_buffer);
+
+    // allow multiple frames to be in-flight
+    // this means we allow a new frame to start being rendered without interfering with one being presented
+    // meaning we need multiple command buffers, semaphores and fences
+    const u16 MAX_FRAMES_IN_FLIGHT = 2;
+
+    // keeps track of the current frame index
+    u32 m_current_frame = 0;
+
+#ifdef NDEBUG
+    const bool m_enable_validation_layers = false;
+#else
+    const bool m_enable_validation_layers = true;
+#endif
+
+    const std::vector<const char *> m_validation_layers =
+    {
+            "VK_LAYER_KHRONOS_validation" // default one with SDK
+    };
+
+    bool check_validation_layer_support();
+    [[nodiscard]] std::vector<const char*> get_required_extensions() const;
+
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
+            VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+            VkDebugUtilsMessageTypeFlagsEXT messageType,
+            const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+            void* pUserData
+    )
+    {
+        std::cout << "validation layer: " << pCallbackData->pMessage << std::endl;
+
+        return VK_FALSE;
+    }
 };
 

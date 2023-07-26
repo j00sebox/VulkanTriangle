@@ -1,5 +1,5 @@
 #define VMA_IMPLEMENTATION
-#include "Device.hpp"
+#include "Renderer.hpp"
 #include "DeviceHelper.hpp"
 #include "Vertex.hpp"
 #include "Utility.hpp"
@@ -7,21 +7,206 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-
-// a descriptor layout specifies the types of resources that are going to be accessed by the pipeline
-// a descriptor set specifies the actual buffer or image resources that will be bound to the descriptors
-struct UniformBufferObject
+Renderer::Renderer(GLFWwindow* window) :
+    m_window(window)
 {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
-};
+    create_instance();
+    create_surface();
+    create_device();
+    create_swapchain();
+    create_render_pass();
+    create_descriptor_set_layout();
+    create_graphics_pipeline();
+    create_command_pool();
+    create_depth_resources();
+    create_framebuffers();
+    create_texture_image();
+    create_texture_image_view();
+    create_texture_sampler();
+    create_uniform_buffers();
+    create_descriptor_pool();
+    create_descriptor_sets();
+    create_command_buffer();
+    create_sync_objects();
+}
 
-Device::Device(const vk::Instance& instance, const vk::SurfaceKHR& surface, vk::DeviceCreateInfo create_info, vk::Extent2D extent) :
-    m_surface(&surface)
+Renderer::~Renderer()
 {
-    m_physical_device = DeviceHelper::pick_physical_device(instance);
-    QueueFamilyIndices indices = DeviceHelper::find_queue_families(m_physical_device, surface);
+
+    // FIXME
+    for(size_t i = 0; i < 2; ++i)
+    {
+        // sync objects
+        m_logical_device.destroySemaphore(m_image_available_semaphores[i], nullptr);
+        m_logical_device.destroySemaphore(m_render_finished_semaphores[i], nullptr);
+        m_logical_device.destroyFence(m_in_flight_fences[i], nullptr);
+
+        // uniform buffers
+        m_logical_device.destroyBuffer(m_uniform_buffers[i], nullptr);
+        m_logical_device.freeMemory(m_uniform_buffers_memory[i], nullptr);
+    }
+
+    cleanup_swapchain();
+
+    m_logical_device.destroyImage(m_texture_image, nullptr);
+    m_logical_device.freeMemory(m_texture_image_memory, nullptr);
+    m_logical_device.destroyImageView(m_texture_image_view, nullptr);
+    m_logical_device.destroySampler(m_texture_sampler, nullptr);
+
+    m_logical_device.destroyDescriptorPool(m_descriptor_pool, nullptr);
+    m_logical_device.destroyDescriptorSetLayout(m_descriptor_set_layout, nullptr);
+
+//    m_logical_device.destroyBuffer(m_index_buffer, nullptr);
+//    m_logical_device.freeMemory(m_index_buffer_memory, nullptr);
+
+//    m_logical_device.destroyBuffer(m_vertex_buffer, nullptr);
+//    m_logical_device.freeMemory(m_vertex_buffer_memory, nullptr);
+
+    vmaDestroyBuffer(m_allocator, static_cast<VkBuffer>(m_vertex_buffer.buffer), m_vertex_buffer.vma_allocation);
+    vmaDestroyBuffer(m_allocator, static_cast<VkBuffer>(m_index_buffer.buffer), m_index_buffer.vma_allocation);
+    vmaDestroyAllocator(m_allocator);
+
+    m_logical_device.destroyCommandPool(m_command_pool, nullptr);
+    m_logical_device.destroyPipeline(m_graphics_pipeline, nullptr);
+    m_logical_device.destroyPipelineLayout(m_pipeline_layout, nullptr);
+    m_logical_device.destroyRenderPass(m_render_pass, nullptr);
+
+    // devices don't interact directly with instances
+    m_logical_device.destroy();
+
+    if (m_enable_validation_layers)
+    {
+        m_instance.destroyDebugUtilsMessengerEXT(m_debug_messenger, nullptr, m_dispatch_loader);
+    }
+    m_instance.destroySurfaceKHR(m_surface, nullptr);
+    m_instance.destroy();
+}
+
+void Renderer::render()
+{
+    draw_frame(m_current_frame);
+    m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+void Renderer::load_model(const OBJLoader& loader)
+{
+    std::vector<Vertex> vertices = loader.get_vertices();
+    create_buffer({
+        .size = (u32)(sizeof(vertices[0]) * vertices.size()),
+        .usage = vk::BufferUsageFlagBits::eVertexBuffer,
+        .data = vertices.data()
+    }, m_vertex_buffer); // FIXME
+
+    std::vector<u32> indices = loader.get_indices();
+    index_count = indices.size();
+    create_buffer({
+        .size = (u32)(sizeof(indices[0]) * indices.size()),
+        .usage = vk::BufferUsageFlagBits::eIndexBuffer,
+        .data = indices.data()
+    }, m_index_buffer); // FIXME
+}
+
+void Renderer::create_instance()
+{
+    if (m_enable_validation_layers && !check_validation_layer_support())
+    {
+        throw std::runtime_error("validation layers requested, but not available");
+    }
+
+    // a lot of info is passed through structs
+    vk::ApplicationInfo app_info{};
+    app_info.sType = vk::StructureType::eApplicationInfo;
+    app_info.pApplicationName = "Hello Triangle";
+    app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    app_info.pEngineName = "No Engine";
+    app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+    app_info.apiVersion = VK_API_VERSION_1_1;
+
+    vk::InstanceCreateInfo create_info{};
+    create_info.sType =  vk::StructureType::eInstanceCreateInfo;
+    create_info.pApplicationInfo = &app_info;
+
+    // can use glfw to wrangle what extensions are available to us
+    auto extensions = get_required_extensions();
+
+    create_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+    create_info.ppEnabledExtensionNames = extensions.data();
+
+    vk::DebugUtilsMessengerCreateInfoEXT debug_create_info{};
+    if (m_enable_validation_layers)
+    {
+        create_info.enabledLayerCount = static_cast<uint32_t>(m_validation_layers.size());
+        create_info.ppEnabledLayerNames = m_validation_layers.data();
+
+        // allows debugging on instance creation and destruction
+        debug_create_info.sType = vk::StructureType::eDebugUtilsMessengerCreateInfoEXT;
+
+        // specify severities to call callback for
+        debug_create_info.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
+                                            vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
+                                            vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose;
+
+        // all message types enabled
+        debug_create_info.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+                                        vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+                                        vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance;
+
+        debug_create_info.pfnUserCallback = debug_callback;
+        debug_create_info.pUserData = nullptr; // optional
+        create_info.pNext = &debug_create_info;
+    }
+    else
+    {
+        create_info.enabledLayerCount = 0;
+    }
+
+    if (vk::createInstance(&create_info, nullptr, &m_instance) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to create instance!");
+    }
+
+    m_dispatch_loader = vk::DispatchLoaderDynamic(m_instance, vkGetInstanceProcAddr);
+
+    // setup debug messenger
+    if(m_enable_validation_layers)
+    {
+        m_debug_messenger = m_instance.createDebugUtilsMessengerEXT(debug_create_info, nullptr, m_dispatch_loader);
+    }
+}
+
+void Renderer::create_surface()
+{
+    VkSurfaceKHR c_style_surface;
+    if (glfwCreateWindowSurface(m_instance, m_window, nullptr, &c_style_surface) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create window surface!");
+    }
+
+    m_surface = c_style_surface;
+}
+
+void Renderer::create_device()
+{
+    vk::PhysicalDeviceFeatures device_features{};
+    device_features.samplerAnisotropy = true;
+
+    vk::DeviceCreateInfo create_info{};
+    create_info.sType = vk::StructureType::eDeviceCreateInfo; // VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+
+    create_info.pEnabledFeatures = &device_features;
+
+    if (m_enable_validation_layers)
+    {
+        create_info.enabledLayerCount = static_cast<unsigned>(m_validation_layers.size());
+        create_info.ppEnabledLayerNames = m_validation_layers.data();
+    }
+    else
+    {
+        create_info.enabledLayerCount = 0;
+    }
+
+    m_physical_device = DeviceHelper::pick_physical_device(m_instance);
+    QueueFamilyIndices indices = DeviceHelper::find_queue_families(m_physical_device, m_surface);
 
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
     std::set<unsigned> unique_queue_families = {indices.graphics_family.value(), indices.present_family.value()};
@@ -72,71 +257,21 @@ Device::Device(const vk::Instance& instance, const vk::SurfaceKHR& surface, vk::
     vma_info.vulkanApiVersion = device_properties.apiVersion;
     vma_info.physicalDevice = m_physical_device;
     vma_info.device = m_logical_device;
-    vma_info.instance = instance;
+    vma_info.instance = m_instance;
 
     vmaCreateAllocator(&vma_info, &m_allocator);
-
-    create_swapchain(extent);
-    create_render_pass();
-    create_descriptor_set_layout();
-    create_graphics_pipeline();
-    create_command_pool();
-    create_depth_resources();
-    create_framebuffers();
-    create_texture_image();
-    create_texture_image_view();
-    create_texture_sampler();
-    create_uniform_buffers();
-    create_descriptor_pool();
-    create_descriptor_sets();
-    create_command_buffer();
-    create_sync_objects();
 }
 
-Device::~Device()
+// a descriptor layout specifies the types of resources that are going to be accessed by the pipeline
+// a descriptor set specifies the actual buffer or image resources that will be bound to the descriptors
+struct UniformBufferObject
 {
-    // FIXME
-    for(size_t i = 0; i < 2; ++i)
-    {
-        // sync objects
-        m_logical_device.destroySemaphore(m_image_available_semaphores[i], nullptr);
-        m_logical_device.destroySemaphore(m_render_finished_semaphores[i], nullptr);
-        m_logical_device.destroyFence(m_in_flight_fences[i], nullptr);
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
+};
 
-        // uniform buffers
-        m_logical_device.destroyBuffer(m_uniform_buffers[i], nullptr);
-        m_logical_device.freeMemory(m_uniform_buffers_memory[i], nullptr);
-    }
-
-    cleanup_swapchain();
-
-    m_logical_device.destroyImage(m_texture_image, nullptr);
-    m_logical_device.freeMemory(m_texture_image_memory, nullptr);
-    m_logical_device.destroyImageView(m_texture_image_view, nullptr);
-    m_logical_device.destroySampler(m_texture_sampler, nullptr);
-
-    m_logical_device.destroyDescriptorPool(m_descriptor_pool, nullptr);
-    m_logical_device.destroyDescriptorSetLayout(m_descriptor_set_layout, nullptr);
-
-    m_logical_device.destroyBuffer(m_index_buffer, nullptr);
-    m_logical_device.freeMemory(m_index_buffer_memory, nullptr);
-
-//    m_logical_device.destroyBuffer(m_vertex_buffer, nullptr);
-//    m_logical_device.freeMemory(m_vertex_buffer_memory, nullptr);
-
-    vmaDestroyBuffer(m_allocator, static_cast<VkBuffer>(m_vertex_buffer), m_vertex_buffer_vma);
-    vmaDestroyAllocator(m_allocator);
-
-    m_logical_device.destroyCommandPool(m_command_pool, nullptr);
-    m_logical_device.destroyPipeline(m_graphics_pipeline, nullptr);
-    m_logical_device.destroyPipelineLayout(m_pipeline_layout, nullptr);
-    m_logical_device.destroyRenderPass(m_render_pass, nullptr);
-
-    // devices don't interact directly with instances
-    m_logical_device.destroy();
-}
-
-void Device::draw_frame(u32 current_frame)
+void Renderer::draw_frame(u32 current_frame)
 {
     // takes array of fences and waits for any and all fences
     // saying VK_TRUE means we want to wait for all fences
@@ -150,11 +285,11 @@ void Device::draw_frame(u32 current_frame)
     result = m_logical_device.acquireNextImageKHR(m_swapchain, UINT64_MAX, m_image_available_semaphores[current_frame], nullptr, &image_index);
 
     // if swapchain is not good we immediately recreate and try again in the next frame
-//    if(result == vk::Result::eErrorOutOfDateKHR)
-//    {
-//        recreate_swapchain();
-//        return;
-//    }
+    if(result == vk::Result::eErrorOutOfDateKHR)
+    {
+        recreate_swapchain();
+        return;
+    }
 
     // need to reset fences to unsignaled
     // but only reset if we are submitting work
@@ -212,7 +347,7 @@ void Device::draw_frame(u32 current_frame)
 //    }
 }
 
-void Device::update_uniform_buffer(unsigned current_image)
+void Renderer::update_uniform_buffer(unsigned current_image)
 {
     static auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -235,7 +370,7 @@ void Device::update_uniform_buffer(unsigned current_image)
 
 // if the command buffer has already been recorded then this will reset it,
 // it's not possible to append commands at a later time
-void Device::record_command_buffer(vk::CommandBuffer& command_buffer, unsigned image_index, u32 current_frame)
+void Renderer::record_command_buffer(vk::CommandBuffer& command_buffer, unsigned image_index, u32 current_frame)
 {
     vk::CommandBufferBeginInfo begin_info{};
     begin_info.sType = vk::StructureType::eCommandBufferBeginInfo;
@@ -292,11 +427,11 @@ void Device::record_command_buffer(vk::CommandBuffer& command_buffer, unsigned i
     // descriptor sets are not unique to graphics pipelines
     command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0, 1, &m_descriptor_sets[current_frame], 0, nullptr);
 
-    vk::Buffer vertex_buffers[] = {m_vertex_buffer};
+    vk::Buffer vertex_buffers[] = {m_vertex_buffer.buffer};
     vk::DeviceSize offsets[] = {0};
     command_buffer.bindVertexBuffers(0, 1, vertex_buffers, offsets);
 
-    command_buffer.bindIndexBuffer(m_index_buffer, 0, vk::IndexType::eUint32);
+    command_buffer.bindIndexBuffer(m_index_buffer.buffer, 0, vk::IndexType::eUint32);
 
     // now we can issue the actual draw command
     // vertex count
@@ -311,13 +446,23 @@ void Device::record_command_buffer(vk::CommandBuffer& command_buffer, unsigned i
     command_buffer.end();
 }
 
-void Device::recreate_swapchain(vk::Extent2D extent)
+void Renderer::recreate_swapchain()
 {
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(m_window, &width, &height);
+    while (width == 0 || height == 0) {
+        glfwGetFramebufferSize(m_window, &width, &height);
+        glfwWaitEvents();
+    }
+
+    wait_for_device_idle();
     cleanup_swapchain();
-    create_swapchain(extent);
+    create_swapchain();
+    create_depth_resources();
+    create_framebuffers();
 }
 
-void Device::create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image &image, vk::DeviceMemory &image_memory)
+void Renderer::create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image &image, vk::DeviceMemory &image_memory)
 {
     vk::ImageCreateInfo image_info{};
     image_info.sType = vk::StructureType::eImageCreateInfo;
@@ -369,7 +514,7 @@ void Device::create_image(u32 width, u32 height, vk::Format format, vk::ImageTil
     m_logical_device.bindImageMemory(image, image_memory, 0);
 }
 
-vk::ImageView Device::create_image_view(const vk::Image& image, vk::Format format, vk::ImageAspectFlags image_aspect)
+vk::ImageView Renderer::create_image_view(const vk::Image& image, vk::Format format, vk::ImageAspectFlags image_aspect)
 {
     vk::ImageViewCreateInfo create_info{};
     create_info.sType = vk::StructureType::eImageViewCreateInfo;
@@ -404,7 +549,7 @@ vk::ImageView Device::create_image_view(const vk::Image& image, vk::Format forma
     return image_view;
 }
 
-void Device::create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags  properties, vk::Buffer& buffer, vk::DeviceMemory& buffer_memory)
+void Renderer::create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags  properties, vk::Buffer& buffer, vk::DeviceMemory& buffer_memory)
 {
     vk::BufferCreateInfo buffer_info{};
     buffer_info.sType = vk::StructureType::eBufferCreateInfo;
@@ -442,14 +587,12 @@ void Device::create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::
     m_logical_device.bindBufferMemory(buffer, buffer_memory, 0);
 }
 
-void Device::create_vertex_buffer(const std::vector<Vertex>& vertices)
+void Renderer::create_buffer(const BufferCreationInfo& buffer_creation, Buffer& buffer)
 {
-    vk::DeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
-
     vk::BufferCreateInfo buffer_info{};
     buffer_info.sType = vk::StructureType::eBufferCreateInfo;
-    buffer_info.size = buffer_size;
-    buffer_info.usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst;
+    buffer_info.size = buffer_creation.size;
+    buffer_info.usage = buffer_creation.usage | vk::BufferUsageFlagBits::eTransferDst;
     buffer_info.sharingMode = vk::SharingMode::eExclusive;
 
     VmaAllocationCreateInfo memory_info{};
@@ -458,42 +601,18 @@ void Device::create_vertex_buffer(const std::vector<Vertex>& vertices)
 
     VmaAllocationInfo allocation_info{};
     vmaCreateBuffer(m_allocator, reinterpret_cast<const VkBufferCreateInfo *>(&buffer_info), &memory_info,
-                    reinterpret_cast<VkBuffer *>(&m_vertex_buffer), &m_vertex_buffer_vma, &allocation_info);
+                    reinterpret_cast<VkBuffer*>(&buffer.buffer), &buffer.vma_allocation, &allocation_info);
 
-    void *data_;
-    vmaMapMemory(m_allocator, m_vertex_buffer_vma, &data_);
-    memcpy(data_, vertices.data(), (size_t) buffer_size);
-    vmaUnmapMemory(m_allocator, m_vertex_buffer_vma);
+    if(buffer_creation.data)
+    {
+        void* data;
+        vmaMapMemory(m_allocator, buffer.vma_allocation, &data);
+        memcpy(data, buffer_creation.data, (size_t)buffer_creation.size);
+        vmaUnmapMemory(m_allocator, buffer.vma_allocation);
+    }
 }
 
-void Device::create_index_buffer(const std::vector<u32>& indices)
-{
-    vk::DeviceSize buffer_size = sizeof(indices[0]) * indices.size();
-    index_count = indices.size();
-
-    vk::Buffer staging_buffer;
-    vk::DeviceMemory staging_buffer_memory;
-    create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
-                  vk::MemoryPropertyFlagBits::eHostVisible |
-                  vk::MemoryPropertyFlagBits::eHostCoherent,
-                  staging_buffer, staging_buffer_memory);
-
-    //  map the buffer memory into CPU accessible memory
-    void* data = m_logical_device.mapMemory(staging_buffer_memory, 0, buffer_size);
-    memcpy(data, indices.data(), (size_t)buffer_size);
-    m_logical_device.unmapMemory(staging_buffer_memory);
-
-    create_buffer(buffer_size, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                  vk::MemoryPropertyFlagBits::eDeviceLocal,
-                  m_index_buffer, m_index_buffer_memory);
-
-    copy_buffer(staging_buffer, m_index_buffer, buffer_size);
-
-    m_logical_device.destroyBuffer(staging_buffer, nullptr);
-    m_logical_device.freeMemory(staging_buffer_memory, nullptr);
-}
-
-vk::ShaderModule Device::create_shader_module(const std::vector<char>& code)
+vk::ShaderModule Renderer::create_shader_module(const std::vector<char>& code)
 {
     vk::ShaderModuleCreateInfo create_info{};
     create_info.sType = vk::StructureType::eShaderModuleCreateInfo;
@@ -510,9 +629,14 @@ vk::ShaderModule Device::create_shader_module(const std::vector<char>& code)
     return shader_module;
 }
 
-void Device::create_swapchain(vk::Extent2D extent)
+void Renderer::create_swapchain()
 {
-    SwapChainSupportDetails swap_chain_support = DeviceHelper::query_swap_chain_support(m_physical_device, *m_surface);
+    SwapChainSupportDetails swap_chain_support = DeviceHelper::query_swap_chain_support(m_physical_device, m_surface);
+
+    // get size for framebuffers
+    int width, height;
+    glfwGetFramebufferSize(m_window, &width, &height);
+    vk::Extent2D extent = { static_cast<unsigned>(width), static_cast<unsigned>(height) };
 
     vk::SurfaceFormatKHR surface_format = DeviceHelper::choose_swap_surface_format(swap_chain_support.formats);
     vk::PresentModeKHR present_mode = DeviceHelper::choose_swap_present_mode(swap_chain_support.present_modes);
@@ -527,8 +651,8 @@ void Device::create_swapchain(vk::Extent2D extent)
     }
 
     vk::SwapchainCreateInfoKHR create_info{};
-    create_info.sType = vk::StructureType::eSwapchainCreateInfoKHR; // VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    create_info.surface = *m_surface;
+    create_info.sType = vk::StructureType::eSwapchainCreateInfoKHR;
+    create_info.surface = m_surface;
 
     // swap chain image details
     create_info.minImageCount = image_count;
@@ -536,16 +660,16 @@ void Device::create_swapchain(vk::Extent2D extent)
     create_info.imageColorSpace = surface_format.colorSpace;
     create_info.imageExtent = actual_extent;
     create_info.imageArrayLayers = 1; // amount of layers each image consists of
-    create_info.imageUsage = vk::ImageUsageFlagBits::eColorAttachment; // VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    create_info.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
 
-    QueueFamilyIndices indices = DeviceHelper::find_queue_families(m_physical_device, *m_surface);
+    QueueFamilyIndices indices = DeviceHelper::find_queue_families(m_physical_device, m_surface);
     unsigned queue_family_indices[] = { indices.graphics_family.value(), indices.present_family.value() };
 
     if(indices.graphics_family != indices.present_family)
     {
         // images can be used across multiple queue families without explicit ownership transfers
         // requires to state which queue families will be shared
-        create_info.imageSharingMode = vk::SharingMode::eConcurrent; // VK_SHARING_MODE_CONCURRENT;
+        create_info.imageSharingMode = vk::SharingMode::eConcurrent;
         create_info.queueFamilyIndexCount = 2;
         create_info.pQueueFamilyIndices = queue_family_indices;
     }
@@ -553,7 +677,7 @@ void Device::create_swapchain(vk::Extent2D extent)
     {
         // image owned by one queue family
         // ownership must be explicitly transferred before using it in another one
-        create_info.imageSharingMode = vk::SharingMode::eExclusive; // VK_SHARING_MODE_EXCLUSIVE;
+        create_info.imageSharingMode = vk::SharingMode::eExclusive;
 
         // optional
         create_info.queueFamilyIndexCount = 0;
@@ -566,7 +690,7 @@ void Device::create_swapchain(vk::Extent2D extent)
 
     // specifies if alpha field should be used for blending
     // almost always want to ignore the alpha channel
-    create_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque; // VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    create_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
 
     create_info.presentMode = present_mode;
     create_info.clipped = VK_TRUE; // don't care about the colour of the pixels being obscured by another window
@@ -597,7 +721,7 @@ void Device::create_swapchain(vk::Extent2D extent)
     }
 }
 
-void Device::create_render_pass()
+void Renderer::create_render_pass()
 {
     // in this case we just have a single colour buffer
     vk::AttachmentDescription colour_attachment{};
@@ -676,7 +800,7 @@ void Device::create_render_pass()
     }
 }
 
-void Device::create_descriptor_set_layout()
+void Renderer::create_descriptor_set_layout()
 {
     vk::DescriptorSetLayoutBinding ubo_layout_binding{};
     ubo_layout_binding.binding = 0; // binding in the shader
@@ -705,7 +829,7 @@ void Device::create_descriptor_set_layout()
     }
 }
 
-void Device::create_graphics_pipeline()
+void Renderer::create_graphics_pipeline()
 {
     auto vert_shader_code = Util::read_file("../shaders/vert.spv");
     auto frag_shader_code = Util::read_file("../shaders/frag.spv");
@@ -737,10 +861,10 @@ void Device::create_graphics_pipeline()
     // ex. size of viewport, line width, blend constants
     // to use dynamic state you need to fill out the struct
     std::vector<vk::DynamicState> dynamic_states =
-    {
-            vk::DynamicState::eViewport,
-            vk::DynamicState::eScissor
-    };
+            {
+                    vk::DynamicState::eViewport,
+                    vk::DynamicState::eScissor
+            };
 
     // the configuration of these values will be ignored, so they can be changed at runtime
     vk::PipelineDynamicStateCreateInfo dynamic_state{};
@@ -921,9 +1045,9 @@ void Device::create_graphics_pipeline()
     m_logical_device.destroyShaderModule(frag_shader_module, nullptr);
 }
 
-void Device::create_command_pool()
+void Renderer::create_command_pool()
 {
-    QueueFamilyIndices queue_family_indices = DeviceHelper::find_queue_families(m_physical_device, *m_surface);
+    QueueFamilyIndices queue_family_indices = DeviceHelper::find_queue_families(m_physical_device, m_surface);
 
     vk::CommandPoolCreateInfo pool_info{};
     pool_info.sType = vk::StructureType::eCommandPoolCreateInfo;
@@ -944,7 +1068,7 @@ void Device::create_command_pool()
     }
 }
 
-void Device::create_depth_resources()
+void Renderer::create_depth_resources()
 {
     create_image(m_swapchain_extent.width, m_swapchain_extent.height,
                  vk::Format::eD32Sfloat, vk::ImageTiling::eOptimal,
@@ -955,7 +1079,7 @@ void Device::create_depth_resources()
     m_depth_image_view = create_image_view(m_depth_image, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth);
 }
 
-void Device::create_framebuffers()
+void Renderer::create_framebuffers()
 {
     m_swapchain_framebuffers.resize(m_swapchain_image_views.size());
 
@@ -981,7 +1105,7 @@ void Device::create_framebuffers()
     }
 }
 
-void Device::create_texture_image()
+void Renderer::create_texture_image()
 {
     int width, height, channels;
     stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &width, &height, &channels, STBI_rgb_alpha);
@@ -997,10 +1121,46 @@ void Device::create_texture_image()
     vk::DeviceMemory staging_buffer_memory;
 
     // should be in host visible memory so that we can map it and should be usable as a transfer source
-    create_buffer(image_size, vk::BufferUsageFlagBits::eTransferSrc,
-                  vk::MemoryPropertyFlagBits::eHostVisible |
-                  vk::MemoryPropertyFlagBits::eHostCoherent,
-                  staging_buffer, staging_buffer_memory);
+//    create_buffer(image_size, vk::BufferUsageFlagBits::eTransferSrc,
+//                  vk::MemoryPropertyFlagBits::eHostVisible |
+//                  vk::MemoryPropertyFlagBits::eHostCoherent,
+//                  staging_buffer, staging_buffer_memory);
+
+    vk::BufferCreateInfo buffer_info{};
+    buffer_info.sType = vk::StructureType::eBufferCreateInfo;
+    buffer_info.size = image_size;
+    buffer_info.usage = vk::BufferUsageFlagBits::eTransferSrc;
+    buffer_info.sharingMode = vk::SharingMode::eExclusive;
+
+    if(m_logical_device.createBuffer(&buffer_info, nullptr, &staging_buffer) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to create buffer!");
+    }
+
+    // for some reason to still need to allocate memory for this buffer
+    // this struct contains:
+    // - size: size of the required amount of memory in bytes, may differ from buffer_info.size
+    // - alignment: the offset where the buffer begins in allocated region of memory
+    // - memoryTypeBits: Bit field of the memory types that are suitable for the buffer
+    vk::MemoryRequirements memory_requirements;
+    m_logical_device.getBufferMemoryRequirements(staging_buffer, &memory_requirements);
+
+    // in a real world application you're not supposed to call vk::AllocateMemory for every buffer
+    // the max number of simultaneous memory allocations is limited by the maxMemoryAllocationCount physical device limit
+    // this can be as low as 4096
+    // you want to use a custom allocator like VMA that splits up a single allocation among many different objects
+    vk::MemoryAllocateInfo alloc_info{};
+    alloc_info.sType = vk::StructureType::eMemoryAllocateInfo;
+    alloc_info.allocationSize = memory_requirements.size;
+    alloc_info.memoryTypeIndex = DeviceHelper::find_memory_type(memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
+                                                                                                    vk::MemoryPropertyFlagBits::eHostCoherent, m_physical_device);
+
+    if(m_logical_device.allocateMemory(&alloc_info, nullptr, &staging_buffer_memory) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to allocate buffer memory!");
+    }
+
+    m_logical_device.bindBufferMemory(staging_buffer, staging_buffer_memory, 0);
 
     void* data = m_logical_device.mapMemory(staging_buffer_memory, 0, image_size);
     memcpy(data, pixels, static_cast<size_t>(image_size));
@@ -1022,12 +1182,12 @@ void Device::create_texture_image()
     m_logical_device.freeMemory(staging_buffer_memory, nullptr);
 }
 
-void Device::create_texture_image_view()
+void Renderer::create_texture_image_view()
 {
     m_texture_image_view = create_image_view(m_texture_image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
 }
 
-void Device::create_texture_sampler()
+void Renderer::create_texture_sampler()
 {
     vk::SamplerCreateInfo sampler_info{};
     sampler_info.sType = vk::StructureType::eSamplerCreateInfo;
@@ -1063,7 +1223,7 @@ void Device::create_texture_sampler()
     }
 }
 
-void Device::create_uniform_buffers()
+void Renderer::create_uniform_buffers()
 {
     vk::DeviceSize buffer_size = sizeof(UniformBufferObject);
 
@@ -1087,7 +1247,7 @@ void Device::create_uniform_buffers()
 }
 
 // FIXME
-void Device::create_descriptor_pool()
+void Renderer::create_descriptor_pool()
 {
     // first describe which descriptor types pur descriptor sets use and how many
     // we allocate one of these descriptors for every frame
@@ -1113,7 +1273,7 @@ void Device::create_descriptor_pool()
 }
 
 // FIXME
-void Device::create_descriptor_sets()
+void Renderer::create_descriptor_sets()
 {
     std::vector<vk::DescriptorSetLayout> layouts(2, m_descriptor_set_layout);
 
@@ -1175,7 +1335,7 @@ void Device::create_descriptor_sets()
 }
 
 // FIXME
-void Device::create_command_buffer()
+void Renderer::create_command_buffer()
 {
     m_command_buffers.resize(2);
 
@@ -1194,7 +1354,7 @@ void Device::create_command_buffer()
 }
 
 // FIXME
-void Device::create_sync_objects()
+void Renderer::create_sync_objects()
 {
     m_image_available_semaphores.resize(2);
     m_render_finished_semaphores.resize(2);
@@ -1212,8 +1372,8 @@ void Device::create_sync_objects()
     for(size_t i = 0; i < 2; ++i)
     {
         if(m_logical_device.createSemaphore(&semaphore_info, nullptr, &m_image_available_semaphores[i]) != vk::Result::eSuccess ||
-                m_logical_device.createSemaphore(&semaphore_info, nullptr, &m_render_finished_semaphores[i]) != vk::Result::eSuccess ||
-                m_logical_device.createFence(&fence_info, nullptr, &m_in_flight_fences[i]) != vk::Result::eSuccess
+           m_logical_device.createSemaphore(&semaphore_info, nullptr, &m_render_finished_semaphores[i]) != vk::Result::eSuccess ||
+           m_logical_device.createFence(&fence_info, nullptr, &m_in_flight_fences[i]) != vk::Result::eSuccess
                 )
         {
             throw std::runtime_error("failed to create sync objects!");
@@ -1221,7 +1381,7 @@ void Device::create_sync_objects()
     }
 }
 
-void Device::cleanup_swapchain()
+void Renderer::cleanup_swapchain()
 {
     for(auto framebuffer : m_swapchain_framebuffers)
     {
@@ -1241,7 +1401,7 @@ void Device::cleanup_swapchain()
 }
 
 // memory transfer ops are executed with command buffers
-void Device::copy_buffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size)
+void Renderer::copy_buffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size)
 {
     vk::CommandBuffer command_buffer = begin_single_time_commands();
 
@@ -1254,7 +1414,7 @@ void Device::copy_buffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::Devic
     end_single_time_commands(command_buffer);
 }
 
-void Device::copy_buffer_to_image(vk::Buffer buffer, vk::Image image, u32 width, u32 height)
+void Renderer::copy_buffer_to_image(vk::Buffer buffer, vk::Image image, u32 width, u32 height)
 {
     vk::CommandBuffer command_buffer = begin_single_time_commands();
 
@@ -1281,7 +1441,7 @@ void Device::copy_buffer_to_image(vk::Buffer buffer, vk::Image image, u32 width,
     end_single_time_commands(command_buffer);
 }
 
-void Device::transition_image_layout(vk::Image image, vk::Format format, vk::ImageLayout old_layout, vk::ImageLayout new_layout)
+void Renderer::transition_image_layout(vk::Image image, vk::Format format, vk::ImageLayout old_layout, vk::ImageLayout new_layout)
 {
     vk::CommandBuffer command_buffer = begin_single_time_commands();
 
@@ -1350,7 +1510,7 @@ void Device::transition_image_layout(vk::Image image, vk::Format format, vk::Ima
     end_single_time_commands(command_buffer);
 }
 
-vk::CommandBuffer Device::begin_single_time_commands()
+vk::CommandBuffer Renderer::begin_single_time_commands()
 {
     vk::CommandBufferAllocateInfo alloc_info{};
     alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
@@ -1372,7 +1532,7 @@ vk::CommandBuffer Device::begin_single_time_commands()
     return command_buffer;
 }
 
-void Device::end_single_time_commands(vk::CommandBuffer command_buffer)
+void Renderer::end_single_time_commands(vk::CommandBuffer command_buffer)
 {
     command_buffer.end();
 
@@ -1387,5 +1547,50 @@ void Device::end_single_time_commands(vk::CommandBuffer command_buffer)
     m_logical_device.freeCommandBuffers(m_command_pool, 1, & command_buffer);
 }
 
+bool Renderer::check_validation_layer_support()
+{
+    uint32_t layer_count;
 
+    vk::Result result = vk::enumerateInstanceLayerProperties(&layer_count, nullptr);
 
+    std::vector<vk::LayerProperties> available_layers(layer_count);
+
+    result = vk::enumerateInstanceLayerProperties(&layer_count, available_layers.data());
+
+    for(const char* layer_name : m_validation_layers)
+    {
+        bool layer_found = false;
+
+        for(const auto& layer_properties : available_layers)
+        {
+            if(strcmp(layer_name, layer_properties.layerName) == 0)
+            {
+                layer_found = true;
+                break;
+            }
+        }
+
+        if(!layer_found)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+[[nodiscard]] std::vector<const char*> Renderer::get_required_extensions() const
+{
+    uint32_t extension_count = 0;
+    const char** glfw_extensions;
+    glfw_extensions = glfwGetRequiredInstanceExtensions(&extension_count);
+
+    std::vector<const char*> extensions(glfw_extensions, glfw_extensions + extension_count);
+
+    if(m_enable_validation_layers)
+    {
+        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
+
+    return extensions;
+}

@@ -3,7 +3,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include "Engine.hpp"
+#include "Renderer.hpp"
 
 class Application
 {
@@ -15,6 +15,6 @@ public:
     void load_model(const char* file_name);
 
 private:
-    Engine* m_engine;
+    Renderer* m_engine;
     GLFWwindow* m_window;
 };

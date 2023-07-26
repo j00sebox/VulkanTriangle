@@ -12,7 +12,7 @@ Application::Application(int width, int height)
     // glfwSetWindowUserPointer(m_window, this);
     // glfwSetFramebufferSizeCallback(m_window, framebuffer_resize_callback);
 
-    m_engine = new Engine(width, height, m_window);
+    m_engine = new Renderer(m_window);
 }
 
 Application::~Application()

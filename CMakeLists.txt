@@ -50,6 +50,7 @@ target_include_directories(${PROJECT_NAME}
         PUBLIC external/stb
         PUBLIC external/assimp/include
         PUBLIC external/tinyobjloader
+        PUBLIC external/vma
 )
 
 target_link_libraries(${PROJECT_NAME} glfw vulkan IMGUI stb assimp tinyobjloader)

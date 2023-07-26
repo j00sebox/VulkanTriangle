@@ -1,3 +1,4 @@
+#define VMA_IMPLEMENTATION
 #include "Device.hpp"
 #include "DeviceHelper.hpp"
 #include "Vertex.hpp"
@@ -5,6 +6,7 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+
 
 // a descriptor layout specifies the types of resources that are going to be accessed by the pipeline
 // a descriptor set specifies the actual buffer or image resources that will be bound to the descriptors
@@ -63,6 +65,17 @@ Device::Device(const vk::Instance& instance, const vk::SurfaceKHR& surface, vk::
     m_logical_device.getQueue(indices.graphics_family.value(), 0, &m_graphics_queue);
     m_logical_device.getQueue(indices.present_family.value(), 0, &m_present_queue);
 
+    vk::PhysicalDeviceProperties device_properties{};
+    m_physical_device.getProperties(&device_properties);
+
+    VmaAllocatorCreateInfo vma_info{};
+    vma_info.vulkanApiVersion = device_properties.apiVersion;
+    vma_info.physicalDevice = m_physical_device;
+    vma_info.device = m_logical_device;
+    vma_info.instance = instance;
+
+    vmaCreateAllocator(&vma_info, &m_allocator);
+
     create_swapchain(extent);
     create_render_pass();
     create_descriptor_set_layout();
@@ -108,8 +121,11 @@ Device::~Device()
     m_logical_device.destroyBuffer(m_index_buffer, nullptr);
     m_logical_device.freeMemory(m_index_buffer_memory, nullptr);
 
-    m_logical_device.destroyBuffer(m_vertex_buffer, nullptr);
-    m_logical_device.freeMemory(m_vertex_buffer_memory, nullptr);
+//    m_logical_device.destroyBuffer(m_vertex_buffer, nullptr);
+//    m_logical_device.freeMemory(m_vertex_buffer_memory, nullptr);
+
+    vmaDestroyBuffer(m_allocator, static_cast<VkBuffer>(m_vertex_buffer), m_vertex_buffer_vma);
+    vmaDestroyAllocator(m_allocator);
 
     m_logical_device.destroyCommandPool(m_command_pool, nullptr);
     m_logical_device.destroyPipeline(m_graphics_pipeline, nullptr);
@@ -430,27 +446,24 @@ void Device::create_vertex_buffer(const std::vector<Vertex>& vertices)
 {
     vk::DeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
 
-    // staging buffer is the temporary buffer on CPU memory that gets transferred to the GPU
-    vk::Buffer staging_buffer;
-    vk::DeviceMemory staging_buffer_memory;
-    create_buffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
-                  vk::MemoryPropertyFlagBits::eHostVisible |
-                  vk::MemoryPropertyFlagBits::eHostCoherent,
-                  staging_buffer, staging_buffer_memory);
+    vk::BufferCreateInfo buffer_info{};
+    buffer_info.sType = vk::StructureType::eBufferCreateInfo;
+    buffer_info.size = buffer_size;
+    buffer_info.usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst;
+    buffer_info.sharingMode = vk::SharingMode::eExclusive;
 
-    //  map the buffer memory into CPU accessible memory
-    void* data = m_logical_device.mapMemory(staging_buffer_memory, 0, buffer_size);
-    memcpy(data, vertices.data(), (size_t)buffer_size);
-    m_logical_device.unmapMemory(staging_buffer_memory);
+    VmaAllocationCreateInfo memory_info{};
+    memory_info.flags = VMA_ALLOCATION_CREATE_STRATEGY_BEST_FIT_BIT;
+    memory_info.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
-    create_buffer(buffer_size, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                  vk::MemoryPropertyFlagBits::eDeviceLocal,
-                  m_vertex_buffer, m_vertex_buffer_memory);
+    VmaAllocationInfo allocation_info{};
+    vmaCreateBuffer(m_allocator, reinterpret_cast<const VkBufferCreateInfo *>(&buffer_info), &memory_info,
+                    reinterpret_cast<VkBuffer *>(&m_vertex_buffer), &m_vertex_buffer_vma, &allocation_info);
 
-    copy_buffer(staging_buffer, m_vertex_buffer, buffer_size);
-
-    m_logical_device.destroyBuffer(staging_buffer, nullptr);
-    m_logical_device.freeMemory(staging_buffer_memory, nullptr);
+    void *data_;
+    vmaMapMemory(m_allocator, m_vertex_buffer_vma, &data_);
+    memcpy(data_, vertices.data(), (size_t) buffer_size);
+    vmaUnmapMemory(m_allocator, m_vertex_buffer_vma);
 }
 
 void Device::create_index_buffer(const std::vector<u32>& indices)

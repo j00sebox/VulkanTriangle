@@ -4,6 +4,8 @@
 #include "Vertex.hpp"
 #include "GPUResources.hpp"
 
+#include <vk_mem_alloc.h>
+
 class Device
 {
 public:
@@ -26,6 +28,7 @@ public:
 private:
     vk::PhysicalDevice m_physical_device;
     vk::Device m_logical_device;
+    VmaAllocator m_allocator;
     const vk::SurfaceKHR* m_surface;
 
     // swapchain related things
@@ -76,6 +79,7 @@ private:
     // TODO: remove
     vk::Buffer m_vertex_buffer;
     vk::DeviceMemory m_vertex_buffer_memory;
+    VmaAllocation m_vertex_buffer_vma;
     vk::Buffer m_index_buffer;
     vk::DeviceMemory m_index_buffer_memory;
     u32 index_count;

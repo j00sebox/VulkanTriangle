@@ -221,4 +221,25 @@ namespace DeviceHelper
             return extent;
         }
     }
+
+    u32 find_memory_type(u32 type_filter, vk::MemoryPropertyFlags properties, vk::PhysicalDevice physical_device)
+    {
+        // has two arrays, memoryTpyes and memoryHeaps
+        // the heaps are distinct memory sources like VRAM and swap space in RAM
+        vk::PhysicalDeviceMemoryProperties memory_properties;
+        physical_device.getMemoryProperties(&memory_properties);
+
+        // find suitable memory type
+        for(unsigned i = 0; i < memory_properties.memoryTypeCount; ++i)
+        {
+            // type filter represent the bits of what is suitable
+            // we also need to be able to write vertex data to that memory
+            if((type_filter & (1 << i)) && (memory_properties.memoryTypes[i].propertyFlags & properties) == properties)
+            {
+                return i;
+            }
+        }
+
+        return 0;
+    }
 }

@@ -12,6 +12,7 @@ public:
     ~Application();
 
     void run();
+    void load_model(const char* file_name);
 
 private:
     Engine* m_engine;

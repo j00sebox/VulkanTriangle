@@ -5,9 +5,8 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include "OBJLoader.hpp"
 #include "Device.hpp"
-
-static void framebuffer_resize_callback(GLFWwindow* window, i32 width, i32 height);
 
 class Engine
 {
@@ -16,9 +15,8 @@ public:
     ~Engine();
 
     void render();
-
-    // many drivers trigger the out of date result, it's not guaranteed
-    bool m_framebuffer_resized = false;
+    void load_model(const OBJLoader& loader);
+    void wait_for_device_idle();
 
 private:
     GLFWwindow* m_window;
@@ -28,40 +26,6 @@ private:
     vk::DispatchLoaderDynamic m_dispatch_loader;
     vk::SurfaceKHR m_surface;
     Device* m_device;
-    vk::PhysicalDevice m_physical_device = nullptr;
-    vk::Device m_logical_device;
-    vk::SwapchainKHR m_swapchain;
-    vk::Format m_swapchain_image_format;
-    vk::Extent2D m_swapchain_extent;
-    std::vector<vk::Image> m_swapchain_images;
-    std::vector<vk::ImageView> m_swapchain_image_views;
-    std::vector<vk::Framebuffer> m_swapchain_framebuffers;
-    vk::RenderPass m_render_pass;
-    vk::DescriptorSetLayout m_descriptor_set_layout;
-    vk::DescriptorPool m_descriptor_pool;
-    std::vector<vk::DescriptorSet> m_descriptor_sets;
-    vk::PipelineLayout m_pipeline_layout;
-    vk::Pipeline m_graphics_pipeline;
-
-    // command pools manage the memory that is used to store the buffers and command buffers are allocated to them
-    vk::CommandPool m_command_pool;
-
-    // each frame need its own command buffer, semaphores and fence
-    std::vector<vk::CommandBuffer> m_command_buffers;
-
-    // we want to use semaphores for swapchain operations since they happen on the GPU
-    std::vector<vk::Semaphore> m_image_available_semaphores;
-    std::vector<vk::Semaphore> m_render_finished_semaphores;
-
-    // purpose is to order execution on the CPU
-    // if the host need to know when the GPU had finished we need a fence
-    // in signaled/unsignaled state
-    std::vector<vk::Fence> m_in_flight_fences;
-
-    // queues are automatically created when the logical device is, but we need a handle to it,
-    // they are also implicitly cleaned up when the device is destroyed
-    vk::Queue m_graphics_queue;
-    vk::Queue m_present_queue;
 
     // allow multiple frames to be in-flight
     // this means we allow a new frame to start being rendered without interfering with one being presented

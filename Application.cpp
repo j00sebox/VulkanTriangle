@@ -30,4 +30,12 @@ void Application::run()
         glfwPollEvents();
         m_engine->render();
     }
+
+    m_engine->wait_for_device_idle();
+}
+
+void Application::load_model(const char* file_name)
+{
+    OBJLoader loader(file_name);
+    m_engine->load_model(loader);
 }

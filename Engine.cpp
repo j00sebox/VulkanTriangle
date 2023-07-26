@@ -27,6 +27,17 @@ void Engine::render()
     m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
+void Engine::load_model(const OBJLoader& loader)
+{
+    m_device->create_vertex_buffer(loader.get_vertices());
+    m_device->create_index_buffer(loader.get_indices());
+}
+
+void Engine::wait_for_device_idle()
+{
+    m_device->wait_for_idle();
+}
+
 void Engine::create_instance()
 {
     if (m_enable_validation_layers && !check_validation_layer_support())
@@ -179,10 +190,4 @@ bool Engine::check_validation_layer_support()
     }
 
     return extensions;
-}
-
-static void framebuffer_resize_callback(GLFWwindow* window, int width, int height)
-{
-    auto engine = reinterpret_cast<Engine*>(glfwGetWindowUserPointer(window));
-    engine->m_framebuffer_resized = true;
 }

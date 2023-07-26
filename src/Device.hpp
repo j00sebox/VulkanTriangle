@@ -2,6 +2,7 @@
 
 #include "config.hpp"
 #include "Vertex.hpp"
+#include "GPUResources.hpp"
 
 class Device
 {
@@ -70,8 +71,7 @@ private:
     vk::DeviceMemory m_texture_image_memory;
     vk::ImageView m_texture_image_view;
     vk::Sampler m_texture_sampler;
-    const std::string MODEL_PATH = "models/viking_room.obj";
-    const std::string TEXTURE_PATH = "textures/viking_room.png";
+    const std::string TEXTURE_PATH = "../textures/viking_room.png";
 
     // TODO: remove
     vk::Buffer m_vertex_buffer;

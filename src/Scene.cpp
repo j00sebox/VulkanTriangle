@@ -9,7 +9,7 @@ struct Model
 
 Scene::Scene()
 {
-    OBJLoader loader("models/viking_room.obj");
+    OBJLoader loader("../models/viking_room.obj");
 
     Model model{};
     model.vertices = loader.get_vertices();

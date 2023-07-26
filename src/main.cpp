@@ -1,10 +1,11 @@
+#include "config.hpp"
 #include "Application.hpp"
 
 int main() 
 {
     // HelloTriangle app;
     Application app(800, 600);
-    app.load_model("models/viking_room.obj");
+    app.load_model("../models/viking_room.obj");
 
     try
     {

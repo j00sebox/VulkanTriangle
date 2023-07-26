@@ -694,8 +694,8 @@ void Device::create_descriptor_set_layout()
 
 void Device::create_graphics_pipeline()
 {
-    auto vert_shader_code = Util::read_file("shaders/vert.spv");
-    auto frag_shader_code = Util::read_file("shaders/frag.spv");
+    auto vert_shader_code = Util::read_file("../shaders/vert.spv");
+    auto frag_shader_code = Util::read_file("../shaders/frag.spv");
 
     vk::ShaderModule vert_shader_module = create_shader_module(vert_shader_code);
     vk::ShaderModule frag_shader_module = create_shader_module(frag_shader_code);

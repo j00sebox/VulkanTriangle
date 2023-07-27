@@ -28,11 +28,18 @@ OBJLoader::OBJLoader(const char* file_path)
                     attrib.vertices[3 * index.vertex_index + 2]
             };
 
-            vertex.uv =
+            if(!attrib.texcoords.empty())
             {
-                    attrib.texcoords[2 * index.texcoord_index + 0],
-                    1.f - attrib.texcoords[2 * index.texcoord_index + 1],
-            };
+                vertex.uv =
+                {
+                        attrib.texcoords[2 * index.texcoord_index + 0],
+                        1.f - attrib.texcoords[2 * index.texcoord_index + 1],
+                };
+            }
+            else
+            {
+                vertex.uv = {0.f, 0.f};
+            }
 
             m_vertices.push_back(vertex);
             m_indices.push_back(m_indices.size());

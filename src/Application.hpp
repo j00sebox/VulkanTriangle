@@ -15,8 +15,10 @@ public:
     void run();
     void load_model(const char* file_name);
 
-private:
+    // FIXME
     Scene* m_scene;
+
+private:
     Renderer* m_engine;
     GLFWwindow* m_window;
 };

@@ -7,6 +7,14 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+// a descriptor layout specifies the types of resources that are going to be accessed by the pipeline
+// a descriptor set specifies the actual buffer or image resources that will be bound to the descriptors
+struct UniformBufferObject
+{
+    glm::mat4 view;
+    glm::mat4 proj;
+};
+
 Renderer::Renderer(GLFWwindow* window) :
     m_window(window)
 {
@@ -76,7 +84,39 @@ Renderer::~Renderer()
 
 void Renderer::render(Scene* scene)
 {
-    draw_frame(m_current_frame, scene->models[0].mesh);
+    begin_frame();
+    for(const Model& model : scene->models)
+    {
+        UniformBufferObject ubo{};
+        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.proj = glm::perspective(glm::radians(45.0f), m_swapchain_extent.width / (float) m_swapchain_extent.height, 0.1f, 10.0f);
+
+        // GLM was originally designed for OpenGL where the Y coordinate of the clip space is inverted,
+        // so we can remedy this by flipping the sign of the Y scaling factor in the projection matrix
+        ubo.proj[1][1] *= -1;
+
+        // this is the most efficient way to pass constantly changing values to the shader
+        // another way to handle smaller data is to use push constants
+        memcpy(m_uniform_buffers_mapped[m_current_frame], &ubo, sizeof(ubo));
+
+        m_command_buffers[m_current_frame].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model.transform);
+
+        vk::Buffer vertex_buffers[] = {model.mesh.vertex_buffer.buffer};
+        vk::DeviceSize offsets[] = {0};
+        m_command_buffers[m_current_frame].bindVertexBuffers(0, 1, vertex_buffers, offsets);
+
+        m_command_buffers[m_current_frame].bindIndexBuffer(model.mesh.index_buffer.buffer, 0, vk::IndexType::eUint32);
+
+        // now we can issue the actual draw command
+        // vertex count
+        // instance count
+        // first index: offset into the vertex buffer
+        // first instance
+        // vkCmdDraw(command_buffer, static_cast<unsigned>(g_vertices.size()), 1, 0, 0);
+        m_command_buffers[m_current_frame].drawIndexed(model.mesh.index_count, 1, 0, 0, 0);
+    }
+    end_frame();
+    //draw_frame(m_current_frame, scene->models[0].mesh);
     m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
@@ -257,14 +297,85 @@ void Renderer::create_device()
     vmaCreateAllocator(&vma_info, &m_allocator);
 }
 
-// a descriptor layout specifies the types of resources that are going to be accessed by the pipeline
-// a descriptor set specifies the actual buffer or image resources that will be bound to the descriptors
-struct UniformBufferObject
+void Renderer::begin_frame()
 {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
-};
+    // takes array of fences and waits for any and all fences
+    // saying VK_TRUE means we want to wait for all fences
+    // last param is the timeout which we basically disable
+    vk::Result result = m_logical_device.waitForFences(1, &m_in_flight_fences[m_current_frame], true, UINT64_MAX);
+
+    // logical device and swapchain we want to get the image from
+    // third param is timeout for image to become available
+    // next 2 params are sync objects to be signaled when presentation engine is done with the image
+    result = m_logical_device.acquireNextImageKHR(m_swapchain, UINT64_MAX, m_image_available_semaphores[m_current_frame], nullptr, &m_image_index);
+
+    // if swapchain is not good we immediately recreate and try again in the next frame
+    if(result == vk::Result::eErrorOutOfDateKHR)
+    {
+        recreate_swapchain();
+        return;
+    }
+
+    // need to reset fences to unsignaled
+    // but only reset if we are submitting work
+    result = m_logical_device.resetFences(1, &m_in_flight_fences[m_current_frame]);
+
+   // update_uniform_buffer(m_current_frame);
+
+    m_command_buffers[m_current_frame].reset();
+    start_renderpass(m_command_buffers[m_current_frame], m_image_index);
+}
+
+void Renderer::end_frame()
+{
+    end_renderpass(m_command_buffers[m_current_frame]);
+
+    vk::SubmitInfo submit_info{};
+    submit_info.sType = vk::StructureType::eSubmitInfo;
+
+    // we are specifying what semaphores we want to use and what stage we want to wait on
+    vk::Semaphore wait_semaphores[] = {m_image_available_semaphores[m_current_frame]};
+    vk::PipelineStageFlags wait_stages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
+    submit_info.waitSemaphoreCount = 1;
+    submit_info.pWaitSemaphores = wait_semaphores;
+    submit_info.pWaitDstStageMask = wait_stages;
+
+    // which command buffers to submit
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &m_command_buffers[m_current_frame];
+
+    // which semaphores to signal once the command buffer is finished
+    vk::Semaphore signal_semaphores[] = {m_render_finished_semaphores[m_current_frame]};
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = signal_semaphores;
+
+    if(m_graphics_queue.submit(1, &submit_info, m_in_flight_fences[m_current_frame]) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to submit draw command!");
+    }
+
+    // last step is to submit the result back to the swapchain
+    vk::PresentInfoKHR present_info{};
+    present_info.sType = vk::StructureType::ePresentInfoKHR;
+    present_info.waitSemaphoreCount = 1;
+    present_info.pWaitSemaphores = signal_semaphores;
+
+    vk::SwapchainKHR swapchains[] = {m_swapchain};
+    present_info.swapchainCount = 1;
+    present_info.pSwapchains = swapchains;
+    present_info.pImageIndices = &m_image_index;
+
+    // one last optional param
+    // can get an array of vk::Result to check every swapchain to see if presentation was successful
+    present_info.pResults = nullptr;
+
+    vk::Result result = m_present_queue.presentKHR(&present_info);
+
+    if(result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
+    {
+        recreate_swapchain();
+    }
+}
 
 // FIXME
 void Renderer::draw_frame(u32 current_frame, const Mesh& mesh)
@@ -432,7 +543,7 @@ void Renderer::update_uniform_buffer(unsigned current_image)
     float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
 
     UniformBufferObject ubo{};
-    ubo.model = glm::rotate(glm::mat4(1.f), time * glm::radians(90.f), glm::vec3(0.f, 0.f, 1.f));
+   // ubo.model = glm::rotate(glm::mat4(1.f), time * glm::radians(90.f), glm::vec3(0.f, 0.f, 1.f));
     ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.proj = glm::perspective(glm::radians(45.0f), m_swapchain_extent.width / (float) m_swapchain_extent.height, 0.1f, 10.0f);
 
@@ -1080,8 +1191,14 @@ void Renderer::create_graphics_pipeline()
     // need to specify the descriptor set layout here
     pipeline_layout_info.setLayoutCount = 1;
     pipeline_layout_info.pSetLayouts = &m_descriptor_set_layout;
-    pipeline_layout_info.pushConstantRangeCount = 0;
-    pipeline_layout_info.pPushConstantRanges = nullptr;
+
+    // need to tell the pipeline that there will be a push constant coming in
+    vk::PushConstantRange push_constant_info{};
+    push_constant_info.offset = 0;
+    push_constant_info.size = sizeof(glm::mat4);
+    push_constant_info.stageFlags = vk::ShaderStageFlagBits::eVertex;
+    pipeline_layout_info.pushConstantRangeCount = 1;
+    pipeline_layout_info.pPushConstantRanges = &push_constant_info;
 
     if(m_logical_device.createPipelineLayout(&pipeline_layout_info, nullptr, &m_pipeline_layout) != vk::Result::eSuccess)
     {

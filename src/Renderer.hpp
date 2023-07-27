@@ -17,6 +17,8 @@ public:
 
     void render(Scene* scene);
     Model load_model(const OBJLoader& loader);
+    void begin_frame();
+    void end_frame();
     void draw_frame(u32 current_frame, const Mesh& mesh);
     void start_renderpass(vk::CommandBuffer command_buffer, u32 image_index);
     void end_renderpass(vk::CommandBuffer command_buffer);
@@ -56,6 +58,8 @@ private:
     std::vector<vk::DescriptorSet> m_descriptor_sets;
     vk::PipelineLayout m_pipeline_layout;
     vk::Pipeline m_graphics_pipeline;
+
+    u32 m_image_index;
 
     // command pools manage the memory that is used to store the buffers and command buffers are allocated to them
     vk::CommandPool m_command_pool;

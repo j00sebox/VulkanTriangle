@@ -119,8 +119,6 @@ private:
     void create_command_buffer();
     void create_sync_objects();
 
-    void update_uniform_buffer(unsigned current_image);
-
     void cleanup_swapchain();
     void copy_buffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size);
     void copy_buffer_to_image(vk::Buffer buffer, vk::Image image, u32 width, u32 height);

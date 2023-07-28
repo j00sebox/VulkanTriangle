@@ -83,21 +83,21 @@ Renderer::~Renderer()
 
 void Renderer::render(Scene* scene)
 {
+    UniformBufferObject ubo{};
+    ubo.view = scene->camera.camera_look_at(); // glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.proj = scene->camera.get_perspective(); // glm::perspective(glm::radians(45.0f), m_swapchain_extent.width / (float) m_swapchain_extent.height, 0.1f, 10.0f);
+
+    // GLM was originally designed for OpenGL where the Y coordinate of the clip space is inverted,
+    // so we can remedy this by flipping the sign of the Y scaling factor in the projection matrix
+    ubo.proj[1][1] *= -1;
+
+    // this is the most efficient way to pass constantly changing values to the shader
+    // another way to handle smaller data is to use push constants
+    memcpy(m_uniform_buffers_mapped[m_current_frame], &ubo, sizeof(ubo));
+
     begin_frame();
     for(const Model& model : scene->models)
     {
-        UniformBufferObject ubo{};
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.proj = glm::perspective(glm::radians(45.0f), m_swapchain_extent.width / (float) m_swapchain_extent.height, 0.1f, 10.0f);
-
-        // GLM was originally designed for OpenGL where the Y coordinate of the clip space is inverted,
-        // so we can remedy this by flipping the sign of the Y scaling factor in the projection matrix
-        ubo.proj[1][1] *= -1;
-
-        // this is the most efficient way to pass constantly changing values to the shader
-        // another way to handle smaller data is to use push constants
-        memcpy(m_uniform_buffers_mapped[m_current_frame], &ubo, sizeof(ubo));
-
         m_command_buffers[m_current_frame].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model.transform);
 
         auto* vertex_buffer = static_cast<Buffer*>(m_buffer_pool.access(model.mesh.vertex_buffer));
@@ -440,27 +440,6 @@ void Renderer::end_renderpass(vk::CommandBuffer command_buffer)
 {
     command_buffer.endRenderPass();
     command_buffer.end();
-}
-
-void Renderer::update_uniform_buffer(unsigned current_image)
-{
-    static auto start_time = std::chrono::high_resolution_clock::now();
-
-    auto current_time = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
-
-    UniformBufferObject ubo{};
-   // ubo.model = glm::rotate(glm::mat4(1.f), time * glm::radians(90.f), glm::vec3(0.f, 0.f, 1.f));
-    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.proj = glm::perspective(glm::radians(45.0f), m_swapchain_extent.width / (float) m_swapchain_extent.height, 0.1f, 10.0f);
-
-    // GLM was originally designed for OpenGL where the Y coordinate of the clip space is inverted,
-    // so we can remedy this by flipping the sign of the Y scaling factor in the projection matrix
-    ubo.proj[1][1] *= -1;
-
-    // this is the most efficient way to pass constantly changing values to the shader
-    // another way to handle smaller data is to use push constants
-    memcpy(m_uniform_buffers_mapped[current_image], &ubo, sizeof(ubo));
 }
 
 void Renderer::recreate_swapchain()

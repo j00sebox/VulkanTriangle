@@ -20,19 +20,18 @@ public:
     Model load_model(const OBJLoader& loader);
     void begin_frame();
     void end_frame();
-    void draw_frame(u32 current_frame, const Mesh& mesh);
     void start_renderpass(vk::CommandBuffer command_buffer, u32 image_index);
     void end_renderpass(vk::CommandBuffer command_buffer);
     void recreate_swapchain();
 
     // resource creation
     void create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image& image, vk::DeviceMemory& image_memory);
-    void create_buffer(const BufferCreationInfo& buffer_creation, Buffer& buffer);
+    u32 create_buffer(const BufferCreationInfo& buffer_creation);
     void create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags  properties, vk::Buffer& buffer, vk::DeviceMemory& buffer_memory);
     vk::ImageView create_image_view(const vk::Image& image, vk::Format format, vk::ImageAspectFlags image_aspect);
     vk::ShaderModule create_shader_module(const std::vector<char>& code);
 
-    void destroy_buffer(Buffer& buffer);
+    void destroy_buffer(u32 buffer_handle);
 
     void wait_for_device_idle() { m_logical_device.waitIdle(); }
 
@@ -94,10 +93,7 @@ private:
     vk::Sampler m_texture_sampler;
     const std::string TEXTURE_PATH = "../textures/viking_room.png";
 
-    // TODO: remove
-    Buffer m_vertex_buffer;
-    Buffer m_index_buffer;
-    u32 index_count;
+    ResourcePool m_buffer_pool;
 
     // uniform buffers
     std::vector<vk::Buffer> m_uniform_buffers;
@@ -124,7 +120,6 @@ private:
     void create_sync_objects();
 
     void update_uniform_buffer(unsigned current_image);
-    void record_command_buffer(vk::CommandBuffer& command_buffer, unsigned image_index, u32 current_frame);
 
     void cleanup_swapchain();
     void copy_buffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size);

@@ -4,7 +4,7 @@
 
 struct Buffer
 {
-    vk::Buffer buffer;
+    VkBuffer vk_buffer;
     VmaAllocation vma_allocation;
     u32 size;
 };

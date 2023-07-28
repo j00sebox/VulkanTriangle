@@ -17,9 +17,8 @@ struct UniformBufferObject
 
 Renderer::Renderer(GLFWwindow* window) :
     m_window(window),
-    m_pool_allocator(10)
+    m_buffer_pool(&m_pool_allocator, 10, sizeof(Buffer))
 {
-    m_pool_allocator.allocate(sizeof(int));
     create_instance();
     create_surface();
     create_device();
@@ -64,8 +63,6 @@ Renderer::~Renderer()
     m_logical_device.destroyDescriptorPool(m_descriptor_pool, nullptr);
     m_logical_device.destroyDescriptorSetLayout(m_descriptor_set_layout, nullptr);
 
-    vmaDestroyBuffer(m_allocator, static_cast<VkBuffer>(m_vertex_buffer.buffer), m_vertex_buffer.vma_allocation);
-    vmaDestroyBuffer(m_allocator, static_cast<VkBuffer>(m_index_buffer.buffer), m_index_buffer.vma_allocation);
     vmaDestroyAllocator(m_allocator);
 
     m_logical_device.destroyCommandPool(m_command_pool, nullptr);
@@ -103,11 +100,13 @@ void Renderer::render(Scene* scene)
 
         m_command_buffers[m_current_frame].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model.transform);
 
-        vk::Buffer vertex_buffers[] = {model.mesh.vertex_buffer.buffer};
+        auto* vertex_buffer = static_cast<Buffer*>(m_buffer_pool.access(model.mesh.vertex_buffer));
+        vk::Buffer vertex_buffers[] = {vertex_buffer->vk_buffer};
         vk::DeviceSize offsets[] = {0};
         m_command_buffers[m_current_frame].bindVertexBuffers(0, 1, vertex_buffers, offsets);
 
-        m_command_buffers[m_current_frame].bindIndexBuffer(model.mesh.index_buffer.buffer, 0, vk::IndexType::eUint32);
+        auto* index_buffer = static_cast<Buffer*>(m_buffer_pool.access(model.mesh.index_buffer));
+        m_command_buffers[m_current_frame].bindIndexBuffer(index_buffer->vk_buffer, 0, vk::IndexType::eUint32);
 
         // now we can issue the actual draw command
         // vertex count
@@ -126,19 +125,19 @@ Model Renderer::load_model(const OBJLoader& loader)
 {
     Mesh mesh{};
     std::vector<Vertex> vertices = loader.get_vertices();
-    create_buffer({
+    mesh.vertex_buffer = create_buffer({
         .size = (u32)(sizeof(vertices[0]) * vertices.size()),
         .usage = vk::BufferUsageFlagBits::eVertexBuffer,
         .data = vertices.data()
-    }, mesh.vertex_buffer);
+    });
 
     std::vector<u32> indices = loader.get_indices();
     mesh.index_count = indices.size();
-    create_buffer({
+    mesh.index_buffer = create_buffer({
         .size = (u32)(sizeof(indices[0]) * indices.size()),
         .usage = vk::BufferUsageFlagBits::eIndexBuffer,
         .data = indices.data()
-    }, mesh.index_buffer);
+    });
 
     return { .mesh = mesh };
 }
@@ -379,100 +378,6 @@ void Renderer::end_frame()
     }
 }
 
-// FIXME
-void Renderer::draw_frame(u32 current_frame, const Mesh& mesh)
-{
-    // takes array of fences and waits for any and all fences
-    // saying VK_TRUE means we want to wait for all fences
-    // last param is the timeout which we basically disable
-    vk::Result result = m_logical_device.waitForFences(1, &m_in_flight_fences[current_frame], true, UINT64_MAX);
-
-    unsigned image_index;
-    // logical device and swapchain we want to get the image from
-    // third param is timeout for image to become available
-    // next 2 params are sync objects to be signaled when presentation engine is done with the image
-    result = m_logical_device.acquireNextImageKHR(m_swapchain, UINT64_MAX, m_image_available_semaphores[current_frame], nullptr, &image_index);
-
-    // if swapchain is not good we immediately recreate and try again in the next frame
-    if(result == vk::Result::eErrorOutOfDateKHR)
-    {
-        recreate_swapchain();
-        return;
-    }
-
-    // need to reset fences to unsignaled
-    // but only reset if we are submitting work
-    result = m_logical_device.resetFences(1, &m_in_flight_fences[current_frame]);
-
-    update_uniform_buffer(current_frame);
-
-    m_command_buffers[current_frame].reset();
-    start_renderpass(m_command_buffers[current_frame], image_index);
-    // record_command_buffer(m_command_buffers[current_frame], image_index, current_frame);
-
-    vk::Buffer vertex_buffers[] = {mesh.vertex_buffer.buffer};
-    vk::DeviceSize offsets[] = {0};
-    m_command_buffers[current_frame].bindVertexBuffers(0, 1, vertex_buffers, offsets);
-
-    m_command_buffers[current_frame].bindIndexBuffer(mesh.index_buffer.buffer, 0, vk::IndexType::eUint32);
-
-    // now we can issue the actual draw command
-    // vertex count
-    // instance count
-    // first index: offset into the vertex buffer
-    // first instance
-    // vkCmdDraw(command_buffer, static_cast<unsigned>(g_vertices.size()), 1, 0, 0);
-    m_command_buffers[current_frame].drawIndexed(mesh.index_count, 1, 0, 0, 0);
-
-    end_renderpass(m_command_buffers[current_frame]);
-
-    vk::SubmitInfo submit_info{};
-    submit_info.sType = vk::StructureType::eSubmitInfo;
-
-    // we are specifying what semaphores we want to use and what stage we want to wait on
-    vk::Semaphore wait_semaphores[] = {m_image_available_semaphores[current_frame]};
-    vk::PipelineStageFlags wait_stages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
-    submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = wait_semaphores;
-    submit_info.pWaitDstStageMask = wait_stages;
-
-    // which command buffers to submit
-    submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &m_command_buffers[current_frame];
-
-    // which semaphores to signal once the command buffer is finished
-    vk::Semaphore signal_semaphores[] = {m_render_finished_semaphores[current_frame]};
-    submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = signal_semaphores;
-
-    if(m_graphics_queue.submit(1, &submit_info, m_in_flight_fences[current_frame]) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to submit draw command!");
-    }
-
-    // last step is to submit the result back to the swapchain
-    vk::PresentInfoKHR present_info{};
-    present_info.sType = vk::StructureType::ePresentInfoKHR;
-    present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = signal_semaphores;
-
-    vk::SwapchainKHR swapchains[] = {m_swapchain};
-    present_info.swapchainCount = 1;
-    present_info.pSwapchains = swapchains;
-    present_info.pImageIndices = &image_index;
-
-    // one last optional param
-    // can get an array of vk::Result to check every swapchain to see if presentation was successful
-    present_info.pResults = nullptr;
-
-    result = m_present_queue.presentKHR(&present_info);
-
-    if(result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
-    {
-        recreate_swapchain();
-    }
-}
-
 void Renderer::start_renderpass(vk::CommandBuffer command_buffer, u32 image_index)
 {
     vk::CommandBufferBeginInfo begin_info{};
@@ -556,84 +461,6 @@ void Renderer::update_uniform_buffer(unsigned current_image)
     // this is the most efficient way to pass constantly changing values to the shader
     // another way to handle smaller data is to use push constants
     memcpy(m_uniform_buffers_mapped[current_image], &ubo, sizeof(ubo));
-}
-
-// if the command buffer has already been recorded then this will reset it,
-// it's not possible to append commands at a later time
-void Renderer::record_command_buffer(vk::CommandBuffer& command_buffer, unsigned image_index, u32 current_frame)
-{
-    vk::CommandBufferBeginInfo begin_info{};
-    begin_info.sType = vk::StructureType::eCommandBufferBeginInfo;
-    begin_info.pInheritanceInfo = nullptr; // only relevant to secondary command buffers
-
-    if(command_buffer.begin(&begin_info) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to begin recording of framebuffer!");
-    }
-
-    vk::RenderPassBeginInfo renderpass_info{};
-    renderpass_info.sType = vk::StructureType::eRenderPassBeginInfo;
-    renderpass_info.renderPass = m_render_pass;
-
-    // need to bind the framebuffer for the swapchain image we want to draw to
-    renderpass_info.framebuffer = m_swapchain_framebuffers[image_index];
-
-    // define size of the render area;
-    // render area defined as the place shader loads and stores happen
-    renderpass_info.renderArea.offset = vk::Offset2D{0, 0};
-    renderpass_info.renderArea.extent = m_swapchain_extent;
-
-    std::array<vk::ClearValue, 2> clear_values{};
-    clear_values[0].color = {0.f, 0.f, 0.f, 1.f};
-    clear_values[1].depthStencil = vk::ClearDepthStencilValue{1.f, 0};
-
-    renderpass_info.clearValueCount = static_cast<unsigned>(clear_values.size());
-    renderpass_info.pClearValues = clear_values.data();
-
-    // all functions that record commands cna be recognized by their vk::Cmd prefix
-    // they all return void, so no error handling until the recording is finished
-    // we use inline since this is a primary command buffer
-    command_buffer.beginRenderPass(&renderpass_info, vk::SubpassContents::eInline);
-
-    // second param specifies if the object is graphics or compute
-    command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphics_pipeline);
-
-    // since we specified that the viewport and scissor were dynamic we need to do them now
-    vk::Viewport viewport{};
-    viewport.x = 0.f;
-    viewport.y = 0.f;
-    viewport.width = static_cast<float>(m_swapchain_extent.width);
-    viewport.height = static_cast<float>(m_swapchain_extent.height);
-    viewport.minDepth = 0.f;
-    viewport.maxDepth = 1.f;
-    command_buffer.setViewport(0, 1, &viewport);
-
-    vk::Rect2D scissor{};
-    scissor.offset = vk::Offset2D{0, 0};
-    scissor.extent = m_swapchain_extent;
-    command_buffer.setScissor(0, 1, &scissor);
-
-    // need to bind right descriptor sets before draw call
-    // descriptor sets are not unique to graphics pipelines
-    command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0, 1, &m_descriptor_sets[current_frame], 0, nullptr);
-
-    vk::Buffer vertex_buffers[] = {m_vertex_buffer.buffer};
-    vk::DeviceSize offsets[] = {0};
-    command_buffer.bindVertexBuffers(0, 1, vertex_buffers, offsets);
-
-    command_buffer.bindIndexBuffer(m_index_buffer.buffer, 0, vk::IndexType::eUint32);
-
-    // now we can issue the actual draw command
-    // vertex count
-    // instance count
-    // first index: offset into the vertex buffer
-    // first instance
-    // vkCmdDraw(command_buffer, static_cast<unsigned>(g_vertices.size()), 1, 0, 0);
-    command_buffer.drawIndexed(index_count, 1, 0, 0, 0);
-
-    command_buffer.endRenderPass();
-
-    command_buffer.end();
 }
 
 void Renderer::recreate_swapchain()
@@ -777,8 +604,13 @@ void Renderer::create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk
     m_logical_device.bindBufferMemory(buffer, buffer_memory, 0);
 }
 
-void Renderer::create_buffer(const BufferCreationInfo& buffer_creation, Buffer& buffer)
+u32 Renderer::create_buffer(const BufferCreationInfo& buffer_creation)
 {
+    u32 handle = m_buffer_pool.acquire();
+    auto* buffer = static_cast<Buffer*>(m_buffer_pool.access(handle));
+
+    buffer->size = buffer_creation.size;
+
     vk::BufferCreateInfo buffer_info{};
     buffer_info.sType = vk::StructureType::eBufferCreateInfo;
     buffer_info.size = buffer_creation.size;
@@ -790,16 +622,18 @@ void Renderer::create_buffer(const BufferCreationInfo& buffer_creation, Buffer& 
     memory_info.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
     VmaAllocationInfo allocation_info{};
-    vmaCreateBuffer(m_allocator, reinterpret_cast<const VkBufferCreateInfo *>(&buffer_info), &memory_info,
-                    reinterpret_cast<VkBuffer*>(&buffer.buffer), &buffer.vma_allocation, &allocation_info);
+    vmaCreateBuffer(m_allocator, reinterpret_cast<const VkBufferCreateInfo*>(&buffer_info), &memory_info,
+                    &buffer->vk_buffer, &buffer->vma_allocation, &allocation_info);
 
     if(buffer_creation.data)
     {
         void* data;
-        vmaMapMemory(m_allocator, buffer.vma_allocation, &data);
+        vmaMapMemory(m_allocator, buffer->vma_allocation, &data);
         memcpy(data, buffer_creation.data, (size_t)buffer_creation.size);
-        vmaUnmapMemory(m_allocator, buffer.vma_allocation);
+        vmaUnmapMemory(m_allocator, buffer->vma_allocation);
     }
+
+    return handle;
 }
 
 vk::ShaderModule Renderer::create_shader_module(const std::vector<char>& code)
@@ -819,9 +653,11 @@ vk::ShaderModule Renderer::create_shader_module(const std::vector<char>& code)
     return shader_module;
 }
 
-void Renderer::destroy_buffer(Buffer& buffer)
+void Renderer::destroy_buffer(u32 buffer_handle)
 {
-    vmaDestroyBuffer(m_allocator, static_cast<VkBuffer>(buffer.buffer), buffer.vma_allocation);
+    auto* buffer = static_cast<Buffer*>(m_buffer_pool.access(buffer_handle));
+    vmaDestroyBuffer(m_allocator, buffer->vk_buffer, buffer->vma_allocation);
+    m_buffer_pool.free(buffer_handle);
 }
 
 void Renderer::create_swapchain()

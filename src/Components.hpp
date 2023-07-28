@@ -4,8 +4,8 @@
 
 struct Mesh
 {
-    Buffer vertex_buffer;
-    Buffer index_buffer;
+    u32 vertex_buffer;
+    u32 index_buffer;
     u32 index_count = 0;
 };
 

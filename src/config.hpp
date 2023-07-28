@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <cstdlib>
 #include <vector>
+#include <list>
 #include <cstring>
 #include <map>
 #include <optional>

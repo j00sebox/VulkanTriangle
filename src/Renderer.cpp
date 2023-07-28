@@ -16,8 +16,10 @@ struct UniformBufferObject
 };
 
 Renderer::Renderer(GLFWwindow* window) :
-    m_window(window)
+    m_window(window),
+    m_pool_allocator(10)
 {
+    m_pool_allocator.allocate(sizeof(int));
     create_instance();
     create_surface();
     create_device();

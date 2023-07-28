@@ -12,4 +12,6 @@ list(APPEND SOURCE_FILES
         ${CMAKE_CURRENT_LIST_DIR}/Scene.cpp
         ${CMAKE_CURRENT_LIST_DIR}/Utility.hpp
         ${CMAKE_CURRENT_LIST_DIR}/Vertex.hpp
+        ${CMAKE_CURRENT_LIST_DIR}/Memory.hpp
+        ${CMAKE_CURRENT_LIST_DIR}/Memory.cpp
 )

@@ -6,6 +6,7 @@
 
 #include "Scene.hpp"
 #include "GPUResources.hpp"
+#include "Memory.hpp"
 #include "Components.hpp"
 #include "OBJLoader.hpp"
 
@@ -44,6 +45,7 @@ private:
     vk::PhysicalDevice m_physical_device;
     vk::Device m_logical_device;
     VmaAllocator m_allocator;
+    PoolAllocator m_pool_allocator;
 
     // swapchain related things
     vk::SwapchainKHR m_swapchain;

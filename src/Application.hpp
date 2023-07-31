@@ -21,7 +21,7 @@ public:
 private:
     Renderer* m_engine;
     GLFWwindow* m_window;
-
+    bool m_running;
     float m_prev_time;
     float get_delta_time();
 };

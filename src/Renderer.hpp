@@ -25,13 +25,16 @@ public:
     void recreate_swapchain();
 
     // resource creation
-    void create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image& image, vk::DeviceMemory& image_memory);
     u32 create_buffer(const BufferCreationInfo& buffer_creation);
+    u32 create_texture(const TextureCreationInfo& texture_creation);
     void create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags  properties, vk::Buffer& buffer, vk::DeviceMemory& buffer_memory);
+    void create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image& image, vk::DeviceMemory& image_memory);
+    void create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image& image, VmaAllocation& image_vma);
     vk::ImageView create_image_view(const vk::Image& image, vk::Format format, vk::ImageAspectFlags image_aspect);
     vk::ShaderModule create_shader_module(const std::vector<char>& code);
 
     void destroy_buffer(u32 buffer_handle);
+    void destroy_texture(u32 texture_handle);
 
     void wait_for_device_idle() { m_logical_device.waitIdle(); }
 
@@ -94,6 +97,8 @@ private:
     const std::string TEXTURE_PATH = "../textures/viking_room.png";
 
     ResourcePool m_buffer_pool;
+    ResourcePool m_texture_pool;
+    ResourcePool m_sampler_pool;
 
     // uniform buffers
     std::vector<vk::Buffer> m_uniform_buffers;

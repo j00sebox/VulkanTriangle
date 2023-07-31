@@ -26,6 +26,7 @@ Application::~Application()
     {
         m_engine->destroy_buffer(model.mesh.vertex_buffer);
         m_engine->destroy_buffer(model.mesh.index_buffer);
+        m_engine->destroy_texture(model.texture);
     }
 
     delete m_scene;
@@ -37,9 +38,17 @@ Application::~Application()
 
 void Application::run()
 {
-    while (!glfwWindowShouldClose(m_window))
+    m_running = true;
+    while (!glfwWindowShouldClose(m_window) && m_running)
     {
         glfwPollEvents();
+
+        if (Input::is_key_pressed(GLFW_KEY_ESCAPE))
+        {
+            m_running = false;
+            continue;
+        }
+
         m_scene->update(get_delta_time());
         m_engine->render(m_scene);
     }

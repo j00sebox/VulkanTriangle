@@ -17,7 +17,9 @@ struct UniformBufferObject
 
 Renderer::Renderer(GLFWwindow* window) :
     m_window(window),
-    m_buffer_pool(&m_pool_allocator, 10, sizeof(Buffer))
+    m_buffer_pool(&m_pool_allocator, 10, sizeof(Buffer)),
+    m_texture_pool(&m_pool_allocator, 10, sizeof(Texture)),
+    m_sampler_pool(&m_pool_allocator, 10, sizeof(Sampler))
 {
     create_instance();
     create_surface();
@@ -98,6 +100,10 @@ void Renderer::render(Scene* scene)
     begin_frame();
     for(const Model& model : scene->models)
     {
+        // need to bind right descriptor sets before draw call
+        // descriptor sets are not unique to graphics pipelines
+        m_command_buffers[m_current_frame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0, 1, &m_descriptor_sets[m_current_frame], 0, nullptr);
+
         m_command_buffers[m_current_frame].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model.transform);
 
         auto* vertex_buffer = static_cast<Buffer*>(m_buffer_pool.access(model.mesh.vertex_buffer));
@@ -121,25 +127,31 @@ void Renderer::render(Scene* scene)
     m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
+// TODO: move outta here
 Model Renderer::load_model(const OBJLoader& loader)
 {
     Mesh mesh{};
     std::vector<Vertex> vertices = loader.get_vertices();
     mesh.vertex_buffer = create_buffer({
-        .size = (u32)(sizeof(vertices[0]) * vertices.size()),
         .usage = vk::BufferUsageFlagBits::eVertexBuffer,
+        .size = (u32)(sizeof(vertices[0]) * vertices.size()),
         .data = vertices.data()
     });
 
     std::vector<u32> indices = loader.get_indices();
     mesh.index_count = indices.size();
     mesh.index_buffer = create_buffer({
-        .size = (u32)(sizeof(indices[0]) * indices.size()),
         .usage = vk::BufferUsageFlagBits::eIndexBuffer,
+        .size = (u32)(sizeof(indices[0]) * indices.size()),
         .data = indices.data()
     });
 
-    return { .mesh = mesh };
+    u32 texture_handle = create_texture({
+        .format = vk::Format::eR8G8B8A8Srgb,
+        .image_src = "../textures/viking_room.png"
+    });
+
+    return { .mesh = mesh, .texture = texture_handle };
 }
 
 void Renderer::create_instance()
@@ -430,10 +442,6 @@ void Renderer::start_renderpass(vk::CommandBuffer command_buffer, u32 image_inde
     scissor.offset = vk::Offset2D{0, 0};
     scissor.extent = m_swapchain_extent;
     command_buffer.setScissor(0, 1, &scissor);
-
-    // need to bind right descriptor sets before draw call
-    // descriptor sets are not unique to graphics pipelines
-    command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0, 1, &m_descriptor_sets[m_current_frame], 0, nullptr);
 }
 
 void Renderer::end_renderpass(vk::CommandBuffer command_buffer)
@@ -615,6 +623,165 @@ u32 Renderer::create_buffer(const BufferCreationInfo& buffer_creation)
     return handle;
 }
 
+u32 Renderer::create_texture(const TextureCreationInfo& texture_creation)
+{
+    u32 handle = m_texture_pool.acquire();
+    auto* texture = static_cast<Texture*>(m_texture_pool.access(handle));
+
+    int width, height, channels;
+    stbi_uc* pixels = stbi_load(texture_creation.image_src, &width, &height, &channels, STBI_rgb_alpha);
+
+    vk::DeviceSize image_size = width * height * 4;
+
+    texture->width = width;
+    texture->height = height;
+
+    if(!pixels)
+    {
+        throw std::runtime_error("failed to load texture image!");
+    }
+
+    u32 staging_handle = create_buffer({
+       .usage = vk::BufferUsageFlagBits::eTransferSrc,
+       .size = (u32)image_size,
+       .data = pixels
+    });
+
+    auto* staging_buffer = static_cast<Buffer*>(m_buffer_pool.access(staging_handle));
+
+//    vk::Buffer staging_buffer;
+//    vk::DeviceMemory staging_buffer_memory;
+//
+//    vk::BufferCreateInfo buffer_info{};
+//    buffer_info.sType = vk::StructureType::eBufferCreateInfo;
+//    buffer_info.size = image_size;
+//    buffer_info.usage = vk::BufferUsageFlagBits::eTransferSrc;
+//    buffer_info.sharingMode = vk::SharingMode::eExclusive;
+//
+//    if(m_logical_device.createBuffer(&buffer_info, nullptr, &staging_buffer) != vk::Result::eSuccess)
+//    {
+//        throw std::runtime_error("failed to create buffer!");
+//    }
+//
+//    // for some reason to still need to allocate memory for this buffer
+//    // this struct contains:
+//    // - size: size of the required amount of memory in bytes, may differ from buffer_info.size
+//    // - alignment: the offset where the buffer begins in allocated region of memory
+//    // - memoryTypeBits: Bit field of the memory types that are suitable for the buffer
+//    vk::MemoryRequirements memory_requirements;
+//    m_logical_device.getBufferMemoryRequirements(staging_buffer, &memory_requirements);
+//
+//    // in a real world application you're not supposed to call vk::AllocateMemory for every buffer
+//    // the max number of simultaneous memory allocations is limited by the maxMemoryAllocationCount physical device limit
+//    // this can be as low as 4096
+//    // you want to use a custom allocator like VMA that splits up a single allocation among many different objects
+//    vk::MemoryAllocateInfo alloc_info{};
+//    alloc_info.sType = vk::StructureType::eMemoryAllocateInfo;
+//    alloc_info.allocationSize = memory_requirements.size;
+//    alloc_info.memoryTypeIndex = DeviceHelper::find_memory_type(memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
+//                                                                                                    vk::MemoryPropertyFlagBits::eHostCoherent, m_physical_device);
+//
+//    if(m_logical_device.allocateMemory(&alloc_info, nullptr, &staging_buffer_memory) != vk::Result::eSuccess)
+//    {
+//        throw std::runtime_error("failed to allocate buffer memory!");
+//    }
+//
+//    m_logical_device.bindBufferMemory(staging_buffer, staging_buffer_memory, 0);
+//
+//    void* data = m_logical_device.mapMemory(staging_buffer_memory, 0, image_size);
+//    memcpy(data, pixels, static_cast<size_t>(image_size));
+//    m_logical_device.unmapMemory(staging_buffer_memory);
+
+    stbi_image_free(pixels);
+
+//    create_image(width, height, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal,
+//                 vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+//                 vk::MemoryPropertyFlagBits::eDeviceLocal, m_texture_image, m_texture_image_memory);
+
+    vk::ImageCreateInfo image_info{};
+    image_info.sType = vk::StructureType::eImageCreateInfo;
+    image_info.imageType = vk::ImageType::e2D; // what kind of coordinate system to use
+    image_info.extent.width = static_cast<unsigned>(width);
+    image_info.extent.height = static_cast<unsigned>(height);
+    image_info.extent.depth = 1;
+    image_info.mipLevels = 1;
+    image_info.arrayLayers = 1;
+
+    // use the same format for the texels as the pixels in the buffer
+    image_info.format = vk::Format::eR8G8B8A8Srgb;
+
+    // defines how the texels are laid out in memory
+    image_info.tiling = vk::ImageTiling::eOptimal;
+
+    // since we are transitioning the image to a new place anyway
+    image_info.initialLayout = vk::ImageLayout::eUndefined;
+
+    // image will be used as a destination to copy the pixel data to
+    // also want to be able to access the image from the shader
+    image_info.usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled;
+
+    // will only be used by one queue family
+    image_info.sharingMode = vk::SharingMode::eExclusive;
+
+    // images used as textures don't really need to be multisampled
+    image_info.samples = vk::SampleCountFlagBits::e1;
+
+    VmaAllocationCreateInfo memory_info{};
+    memory_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    vmaCreateImage(m_allocator, reinterpret_cast<const VkImageCreateInfo*>(&image_info), &memory_info, &texture->vk_image, &texture->vma_allocation, nullptr);
+
+    transition_image_layout(texture->vk_image, vk::Format::eR8G8B8A8Srgb, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+
+    copy_buffer_to_image(staging_buffer->vk_buffer, texture->vk_image, static_cast<unsigned>(width), static_cast<unsigned>(height));
+
+    transition_image_layout(texture->vk_image, vk::Format::eR8G8B8A8Srgb, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+    texture->vk_image_view = create_image_view(texture->vk_image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
+
+    destroy_buffer(staging_handle);
+//    m_logical_device.destroyBuffer(staging_buffer, nullptr);
+//    m_logical_device.freeMemory(staging_buffer_memory, nullptr);
+
+    return handle;
+}
+
+void Renderer::create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image& image, VmaAllocation& image_vma)
+{
+    vk::ImageCreateInfo image_info{};
+    image_info.sType = vk::StructureType::eImageCreateInfo;
+    image_info.imageType = vk::ImageType::e2D; // what kind of coordinate system to use
+    image_info.extent.width = static_cast<unsigned>(width);
+    image_info.extent.height = static_cast<unsigned>(height);
+    image_info.extent.depth = 1;
+    image_info.mipLevels = 1;
+    image_info.arrayLayers = 1;
+
+    // use the same format for the texels as the pixels in the buffer
+    image_info.format = format; 
+
+    // defines how the texels are laid out in memory
+    image_info.tiling = tiling;
+
+    // since we are transitioning the image to a new place anyway
+    image_info.initialLayout = vk::ImageLayout::eUndefined;
+
+    // image will be used as a destination to copy the pixel data to
+    // also want to be able to access the image from the shader
+    image_info.usage = usage;
+
+    // will only be used by one queue family
+    image_info.sharingMode = vk::SharingMode::eExclusive;
+
+    // images used as textures don't really need to be multisampled
+    image_info.samples = vk::SampleCountFlagBits::e1;
+
+    VmaAllocationCreateInfo memory_info{};
+    memory_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    vmaCreateImage(m_allocator, reinterpret_cast<const VkImageCreateInfo*>(&image_info), &memory_info, reinterpret_cast<VkImage*>(&image), &image_vma, nullptr);
+}
+
 vk::ShaderModule Renderer::create_shader_module(const std::vector<char>& code)
 {
     vk::ShaderModuleCreateInfo create_info{};
@@ -637,6 +804,14 @@ void Renderer::destroy_buffer(u32 buffer_handle)
     auto* buffer = static_cast<Buffer*>(m_buffer_pool.access(buffer_handle));
     vmaDestroyBuffer(m_allocator, buffer->vk_buffer, buffer->vma_allocation);
     m_buffer_pool.free(buffer_handle);
+}
+
+void Renderer::destroy_texture(u32 texture_handle)
+{
+    auto* texture = static_cast<Texture*>(m_texture_pool.access(texture_handle));
+    m_logical_device.destroyImageView(texture->vk_image_view, nullptr);
+    vmaDestroyImage(m_allocator, texture->vk_image, texture->vma_allocation);
+    m_texture_pool.free(texture_handle);
 }
 
 void Renderer::create_swapchain()
@@ -1301,12 +1476,12 @@ void Renderer::create_descriptor_sets()
 
     // the descriptor sets are allocated but still need to be configured
     // descriptors that refer to buffers are configured like this
-    for(size_t i = 0; i < 2; ++i)
+    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         vk::DescriptorBufferInfo buffer_info{};
         buffer_info.buffer = m_uniform_buffers[i];
         buffer_info.offset = 0;
-        buffer_info.range = sizeof(UniformBufferObject); // or VK_WHOLE_SIZE
+        buffer_info.range = sizeof(UniformBufferObject);
 
         vk::DescriptorImageInfo image_info{};
         image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;

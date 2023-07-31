@@ -12,5 +12,6 @@ struct Mesh
 struct Model
 {
     Mesh mesh;
+    u32 texture;
     glm::mat4 transform{1.f};
 };

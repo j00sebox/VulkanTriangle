@@ -27,6 +27,9 @@ public:
     // resource creation
     u32 create_buffer(const BufferCreationInfo& buffer_creation);
     u32 create_texture(const TextureCreationInfo& texture_creation);
+    u32 create_sampler(const SamplerCreationInfo& sampler_creation);
+    u32 create_descriptor_set_layout(const DescriptorSetLayoutCreationInfo& descriptor_set_layout_creation);
+    u32 create_descriptor_set(const DescriptorSetCreationInfo& descriptor_set_creation);
     void create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags  properties, vk::Buffer& buffer, vk::DeviceMemory& buffer_memory);
     void create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image& image, vk::DeviceMemory& image_memory);
     void create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image& image, VmaAllocation& image_vma);
@@ -58,6 +61,8 @@ private:
     std::vector<vk::Framebuffer> m_swapchain_framebuffers;
     vk::RenderPass m_render_pass;
     vk::DescriptorSetLayout m_descriptor_set_layout;
+    vk::DescriptorSetLayout m_camera_data_layout;
+    vk::DescriptorSetLayout m_textured_set_layout;
     vk::DescriptorPool m_descriptor_pool;
     std::vector<vk::DescriptorSet> m_descriptor_sets;
     vk::PipelineLayout m_pipeline_layout;
@@ -99,6 +104,7 @@ private:
     ResourcePool m_buffer_pool;
     ResourcePool m_texture_pool;
     ResourcePool m_sampler_pool;
+    ResourcePool m_descriptor_set_pool;
 
     // uniform buffers
     std::vector<vk::Buffer> m_uniform_buffers;
@@ -123,6 +129,8 @@ private:
     void create_descriptor_sets();
     void create_command_buffer();
     void create_sync_objects();
+
+    void init_descriptor_sets();
 
     void cleanup_swapchain();
     void copy_buffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size);

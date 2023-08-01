@@ -10,7 +10,7 @@ layout(push_constant) uniform constants
     mat4 model;
 } object_transform;
 
-layout(binding=0) uniform UniformBufferObject
+layout(set=0, binding=0) uniform UniformBufferObject
 {
     mat4 view;
     mat4 proj;

@@ -26,15 +26,33 @@ struct Texture
 
 struct Sampler
 {
-    VkSampler                       vk_sampler;
+    vk::Sampler                       vk_sampler;
 
-    VkFilter                        min_filter = VK_FILTER_NEAREST;
-    VkFilter                        mag_filter = VK_FILTER_NEAREST;
-    VkSamplerMipmapMode             mip_filter = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    vk::Filter                        min_filter;
+    vk::Filter                        mag_filter;
 
-    VkSamplerAddressMode            address_mode_u = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    VkSamplerAddressMode            address_mode_v = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    VkSamplerAddressMode            address_mode_w = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    vk::SamplerAddressMode            address_mode_u;
+    vk::SamplerAddressMode            address_mode_v;
+    vk::SamplerAddressMode            address_mode_w;
+};
+
+struct DescriptorSetLayout
+{
+    VkDescriptorSetLayout           vk_descriptor_set_layout;
+
+    VkDescriptorSetLayoutBinding    vk_binding;
+    u32                             num_bindings;
+};
+
+struct DescriptorSet
+{
+    vk::DescriptorSet                 vk_descriptor_set;
+
+    u32*                            resources = nullptr;
+    u32*                            samplers = nullptr;
+    u16*                            bindings = nullptr;
+
+    u32                             num_resources;
 };
 
 struct BufferCreationInfo
@@ -46,7 +64,42 @@ struct BufferCreationInfo
 
 struct TextureCreationInfo
 {
-    vk::Format                        format          = vk::Format::eUndefined;
+    vk::Format                      format          = vk::Format::eUndefined;
 
     const char*                     image_src;
+};
+
+struct SamplerCreationInfo
+{
+    vk::Filter                      min_filter;
+    vk::Filter                      mag_filter;
+
+    vk::SamplerAddressMode          u_mode;
+    vk::SamplerAddressMode          v_mode;
+    vk::SamplerAddressMode          w_mode;
+};
+
+struct DescriptorSetLayoutCreationInfo
+{
+    struct Binding
+    {
+
+        VkDescriptorType            type    = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+        u16                         start   = 0;
+        u16                         count   = 0;
+    };
+
+    Binding                         bindings[8];
+    u32                             num_bindings;
+};
+
+// FIXME: naughty magic numbers
+struct DescriptorSetCreationInfo
+{
+    u32                             resource_handles[8];
+    u32                             sampler_handles[8];
+    u16                             bindings[8];
+
+    vk::DescriptorSetLayout         layout;
+    u32                             num_resources;
 };

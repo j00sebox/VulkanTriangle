@@ -26,7 +26,7 @@ Application::~Application()
     {
         m_engine->destroy_buffer(model.mesh.vertex_buffer);
         m_engine->destroy_buffer(model.mesh.index_buffer);
-        m_engine->destroy_texture(model.texture);
+        m_engine->destroy_texture(model.material.texture);
     }
 
     delete m_scene;

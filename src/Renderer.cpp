@@ -19,7 +19,8 @@ Renderer::Renderer(GLFWwindow* window) :
     m_window(window),
     m_buffer_pool(&m_pool_allocator, 10, sizeof(Buffer)),
     m_texture_pool(&m_pool_allocator, 10, sizeof(Texture)),
-    m_sampler_pool(&m_pool_allocator, 10, sizeof(Sampler))
+    m_sampler_pool(&m_pool_allocator, 10, sizeof(Sampler)),
+    m_descriptor_set_pool(&m_pool_allocator, 10, sizeof(DescriptorSet))
 {
     create_instance();
     create_surface();
@@ -27,6 +28,7 @@ Renderer::Renderer(GLFWwindow* window) :
     create_swapchain();
     create_render_pass();
     create_descriptor_set_layout();
+    init_descriptor_sets();
     create_graphics_pipeline();
     create_command_pool();
     create_depth_resources();
@@ -86,8 +88,8 @@ Renderer::~Renderer()
 void Renderer::render(Scene* scene)
 {
     UniformBufferObject ubo{};
-    ubo.view = scene->camera.camera_look_at(); // glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.proj = scene->camera.get_perspective(); // glm::perspective(glm::radians(45.0f), m_swapchain_extent.width / (float) m_swapchain_extent.height, 0.1f, 10.0f);
+    ubo.view = scene->camera.camera_look_at();
+    ubo.proj = scene->camera.get_perspective();
 
     // GLM was originally designed for OpenGL where the Y coordinate of the clip space is inverted,
     // so we can remedy this by flipping the sign of the Y scaling factor in the projection matrix
@@ -103,6 +105,9 @@ void Renderer::render(Scene* scene)
         // need to bind right descriptor sets before draw call
         // descriptor sets are not unique to graphics pipelines
         m_command_buffers[m_current_frame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0, 1, &m_descriptor_sets[m_current_frame], 0, nullptr);
+
+        auto* material_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(model.material.descriptor_set));
+        m_command_buffers[m_current_frame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 1, 1, &material_set->vk_descriptor_set, 0, nullptr);
 
         m_command_buffers[m_current_frame].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model.transform);
 
@@ -146,12 +151,28 @@ Model Renderer::load_model(const OBJLoader& loader)
         .data = indices.data()
     });
 
-    u32 texture_handle = create_texture({
+    Material material{};
+    material.texture = create_texture({
         .format = vk::Format::eR8G8B8A8Srgb,
         .image_src = "../textures/viking_room.png"
     });
 
-    return { .mesh = mesh, .texture = texture_handle };
+    material.sampler = create_sampler({
+        .min_filter = vk::Filter::eLinear,
+        .mag_filter = vk::Filter::eLinear,
+        .u_mode = vk::SamplerAddressMode::eRepeat,
+        .v_mode = vk::SamplerAddressMode::eRepeat,
+        .w_mode = vk::SamplerAddressMode::eRepeat
+    });
+
+    material.descriptor_set = create_descriptor_set({
+       .resource_handles = { material.texture },
+       .sampler_handles = { material.sampler },
+       .bindings = {0},
+       .num_resources = 1
+    });
+
+    return { .mesh = mesh, .material = material };
 }
 
 void Renderer::create_instance()
@@ -649,54 +670,7 @@ u32 Renderer::create_texture(const TextureCreationInfo& texture_creation)
 
     auto* staging_buffer = static_cast<Buffer*>(m_buffer_pool.access(staging_handle));
 
-//    vk::Buffer staging_buffer;
-//    vk::DeviceMemory staging_buffer_memory;
-//
-//    vk::BufferCreateInfo buffer_info{};
-//    buffer_info.sType = vk::StructureType::eBufferCreateInfo;
-//    buffer_info.size = image_size;
-//    buffer_info.usage = vk::BufferUsageFlagBits::eTransferSrc;
-//    buffer_info.sharingMode = vk::SharingMode::eExclusive;
-//
-//    if(m_logical_device.createBuffer(&buffer_info, nullptr, &staging_buffer) != vk::Result::eSuccess)
-//    {
-//        throw std::runtime_error("failed to create buffer!");
-//    }
-//
-//    // for some reason to still need to allocate memory for this buffer
-//    // this struct contains:
-//    // - size: size of the required amount of memory in bytes, may differ from buffer_info.size
-//    // - alignment: the offset where the buffer begins in allocated region of memory
-//    // - memoryTypeBits: Bit field of the memory types that are suitable for the buffer
-//    vk::MemoryRequirements memory_requirements;
-//    m_logical_device.getBufferMemoryRequirements(staging_buffer, &memory_requirements);
-//
-//    // in a real world application you're not supposed to call vk::AllocateMemory for every buffer
-//    // the max number of simultaneous memory allocations is limited by the maxMemoryAllocationCount physical device limit
-//    // this can be as low as 4096
-//    // you want to use a custom allocator like VMA that splits up a single allocation among many different objects
-//    vk::MemoryAllocateInfo alloc_info{};
-//    alloc_info.sType = vk::StructureType::eMemoryAllocateInfo;
-//    alloc_info.allocationSize = memory_requirements.size;
-//    alloc_info.memoryTypeIndex = DeviceHelper::find_memory_type(memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
-//                                                                                                    vk::MemoryPropertyFlagBits::eHostCoherent, m_physical_device);
-//
-//    if(m_logical_device.allocateMemory(&alloc_info, nullptr, &staging_buffer_memory) != vk::Result::eSuccess)
-//    {
-//        throw std::runtime_error("failed to allocate buffer memory!");
-//    }
-//
-//    m_logical_device.bindBufferMemory(staging_buffer, staging_buffer_memory, 0);
-//
-//    void* data = m_logical_device.mapMemory(staging_buffer_memory, 0, image_size);
-//    memcpy(data, pixels, static_cast<size_t>(image_size));
-//    m_logical_device.unmapMemory(staging_buffer_memory);
-
     stbi_image_free(pixels);
-
-//    create_image(width, height, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal,
-//                 vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-//                 vk::MemoryPropertyFlagBits::eDeviceLocal, m_texture_image, m_texture_image_memory);
 
     vk::ImageCreateInfo image_info{};
     image_info.sType = vk::StructureType::eImageCreateInfo;
@@ -740,10 +714,87 @@ u32 Renderer::create_texture(const TextureCreationInfo& texture_creation)
     texture->vk_image_view = create_image_view(texture->vk_image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
 
     destroy_buffer(staging_handle);
-//    m_logical_device.destroyBuffer(staging_buffer, nullptr);
-//    m_logical_device.freeMemory(staging_buffer_memory, nullptr);
 
     return handle;
+}
+
+u32 Renderer::create_sampler(const SamplerCreationInfo& sampler_creation)
+{
+    u32 sampler_handle = m_sampler_pool.acquire();
+    auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(sampler_handle));
+
+    vk::SamplerCreateInfo sampler_info{};
+    sampler_info.sType = vk::StructureType::eSamplerCreateInfo;
+    sampler_info.magFilter = sampler_creation.mag_filter;
+    sampler_info.minFilter = sampler_creation.min_filter;
+
+    sampler_info.addressModeU = sampler_creation.u_mode;
+    sampler_info.addressModeV = sampler_creation.v_mode;
+    sampler_info.addressModeW = sampler_creation.w_mode;
+
+    vk::PhysicalDeviceProperties properties{};
+    m_physical_device.getProperties(&properties);
+
+    sampler_info.anisotropyEnable = true;
+    sampler_info.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+
+    sampler_info.borderColor = vk::BorderColor::eIntOpaqueBlack;
+
+    sampler_info.unnormalizedCoordinates = false;
+
+    sampler_info.compareEnable = false;
+    sampler_info.compareOp = vk::CompareOp::eAlways;
+
+    sampler_info.mipmapMode = vk::SamplerMipmapMode::eLinear;
+    sampler_info.mipLodBias = 0.f;
+    sampler_info.minLod = 0.f;
+    sampler_info.maxLod = 0.f;
+
+    if(m_logical_device.createSampler(&sampler_info, nullptr, &sampler->vk_sampler) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to create texture sampler!");
+    }
+
+    return sampler_handle;
+}
+
+u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_set_creation)
+{
+    u32 descriptor_set_handle = m_descriptor_set_pool.acquire();
+    auto* descriptor_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(descriptor_set_handle));
+
+    vk::DescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = vk::StructureType::eDescriptorSetAllocateInfo;
+    allocInfo.descriptorPool = m_descriptor_pool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_textured_set_layout;
+
+    if(vk::Result result = m_logical_device.allocateDescriptorSets(&allocInfo, &descriptor_set->vk_descriptor_set); result != vk::Result::eSuccess)
+    {
+        std::cout << (int)result << std::endl;
+        throw std::runtime_error("failed to create descriptor set!");
+    }
+
+    auto* texture = static_cast<Texture*>(m_texture_pool.access(descriptor_set_creation.resource_handles[0]));
+    auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(descriptor_set_creation.resource_handles[0]));
+
+    vk::DescriptorImageInfo descriptor_info{};
+    descriptor_info.imageView = texture->vk_image_view;
+    descriptor_info.sampler = sampler->vk_sampler;
+    descriptor_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+
+    std::array<vk::WriteDescriptorSet, 1> descriptor_writes{};
+    descriptor_writes[0].sType = vk::StructureType::eWriteDescriptorSet;
+    descriptor_writes[0].dstSet = descriptor_set->vk_descriptor_set; // descriptor set to update
+    descriptor_writes[0].dstBinding = descriptor_set_creation.bindings[0];
+    descriptor_writes[0].dstArrayElement = 0;
+    descriptor_writes[0].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    descriptor_writes[0].descriptorCount = 1; // how many array elements to update
+    descriptor_writes[0].pImageInfo = &descriptor_info;
+
+    m_logical_device.updateDescriptorSets(static_cast<unsigned>(descriptor_writes.size()), descriptor_writes.data(), 0, nullptr);
+
+    return descriptor_set_handle;
 }
 
 void Renderer::create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image& image, VmaAllocation& image_vma)
@@ -1014,6 +1065,43 @@ void Renderer::create_descriptor_set_layout()
     }
 }
 
+void Renderer::init_descriptor_sets()
+{
+    vk::DescriptorSetLayoutBinding camera_data_layout_binding{};
+    camera_data_layout_binding.binding = 0; // binding in the shader
+    camera_data_layout_binding.descriptorType = vk::DescriptorType::eUniformBuffer;
+    camera_data_layout_binding.descriptorCount = 1;
+    camera_data_layout_binding.stageFlags = vk::ShaderStageFlagBits::eVertex;
+    camera_data_layout_binding.pImmutableSamplers = nullptr; // only relevant for image sampling descriptors
+
+    vk::DescriptorSetLayoutCreateInfo camera_layout_info{};
+    camera_layout_info.sType = vk::StructureType::eDescriptorSetLayoutCreateInfo;
+    camera_layout_info.bindingCount = 1;
+    camera_layout_info.pBindings = &camera_data_layout_binding;
+
+    if(m_logical_device.createDescriptorSetLayout(&camera_layout_info, nullptr, &m_camera_data_layout) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to create descriptor set layout!");
+    }
+
+    vk::DescriptorSetLayoutBinding textured_layout_binding{};
+    textured_layout_binding.binding = 0;
+    textured_layout_binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    textured_layout_binding.descriptorCount = 1;
+    textured_layout_binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+    textured_layout_binding.pImmutableSamplers = nullptr;
+
+    vk::DescriptorSetLayoutCreateInfo textured_layout_info{};
+    textured_layout_info.sType = vk::StructureType::eDescriptorSetLayoutCreateInfo;
+    textured_layout_info.bindingCount = 1;
+    textured_layout_info.pBindings = &textured_layout_binding;
+
+    if(m_logical_device.createDescriptorSetLayout(&textured_layout_info, nullptr, &m_textured_set_layout) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to create descriptor set layout!");
+    }
+}
+
 void Renderer::create_graphics_pipeline()
 {
     auto vert_shader_code = Util::read_file("../shaders/vert.spv");
@@ -1046,10 +1134,10 @@ void Renderer::create_graphics_pipeline()
     // ex. size of viewport, line width, blend constants
     // to use dynamic state you need to fill out the struct
     std::vector<vk::DynamicState> dynamic_states =
-            {
-                    vk::DynamicState::eViewport,
-                    vk::DynamicState::eScissor
-            };
+    {
+            vk::DynamicState::eViewport,
+            vk::DynamicState::eScissor
+    };
 
     // the configuration of these values will be ignored, so they can be changed at runtime
     vk::PipelineDynamicStateCreateInfo dynamic_state{};
@@ -1181,8 +1269,9 @@ void Renderer::create_graphics_pipeline()
     pipeline_layout_info.sType = vk::StructureType::ePipelineLayoutCreateInfo;
 
     // need to specify the descriptor set layout here
-    pipeline_layout_info.setLayoutCount = 1;
-    pipeline_layout_info.pSetLayouts = &m_descriptor_set_layout;
+    pipeline_layout_info.setLayoutCount = 2;
+    vk::DescriptorSetLayout layouts[] = { m_camera_data_layout, m_textured_set_layout };
+    pipeline_layout_info.pSetLayouts = layouts;
 
     // need to tell the pipeline that there will be a push constant coming in
     vk::PushConstantRange push_constant_info{};
@@ -1383,7 +1472,6 @@ void Renderer::create_texture_sampler()
     sampler_info.addressModeV = vk::SamplerAddressMode::eRepeat;
     sampler_info.addressModeW = vk::SamplerAddressMode::eRepeat;
 
-
     vk::PhysicalDeviceProperties properties{};
     m_physical_device.getProperties(&properties);
 
@@ -1436,10 +1524,10 @@ void Renderer::create_descriptor_pool()
     // we allocate one of these descriptors for every frame
     std::array<vk::DescriptorPoolSize, 2> pool_sizes{};
     pool_sizes[0].type = vk::DescriptorType::eUniformBuffer;
-    pool_sizes[0].descriptorCount = static_cast<unsigned>(MAX_FRAMES_IN_FLIGHT);
+    pool_sizes[0].descriptorCount = static_cast<unsigned>(10);
 
     pool_sizes[1].type = vk::DescriptorType::eCombinedImageSampler;
-    pool_sizes[1].descriptorCount = static_cast<unsigned>(MAX_FRAMES_IN_FLIGHT);
+    pool_sizes[1].descriptorCount = static_cast<unsigned>(10);
 
     vk::DescriptorPoolCreateInfo pool_info{};
     pool_info.sType = vk::StructureType::eDescriptorPoolCreateInfo;
@@ -1447,7 +1535,7 @@ void Renderer::create_descriptor_pool()
     pool_info.pPoolSizes = pool_sizes.data();
 
     // describe max amount of individual descriptors that may be allocated
-    pool_info.maxSets = static_cast<unsigned>(MAX_FRAMES_IN_FLIGHT);
+    pool_info.maxSets = static_cast<unsigned>(10);
 
     if(m_logical_device.createDescriptorPool(&pool_info, nullptr, &m_descriptor_pool) != vk::Result::eSuccess)
     {
@@ -1457,7 +1545,7 @@ void Renderer::create_descriptor_pool()
 
 void Renderer::create_descriptor_sets()
 {
-    std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, m_descriptor_set_layout);
+    std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, m_camera_data_layout);
 
     vk::DescriptorSetAllocateInfo alloc_info{};
     alloc_info.sType = vk::StructureType::eDescriptorSetAllocateInfo;
@@ -1483,13 +1571,13 @@ void Renderer::create_descriptor_sets()
         buffer_info.offset = 0;
         buffer_info.range = sizeof(UniformBufferObject);
 
-        vk::DescriptorImageInfo image_info{};
-        image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        image_info.imageView = m_texture_image_view;
-        image_info.sampler = m_texture_sampler;
+//        vk::DescriptorImageInfo image_info{};
+//        image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+//        image_info.imageView = m_texture_image_view;
+//        image_info.sampler = m_texture_sampler;
 
         // the config is updated using the vkUpdateDescriptorSets function
-        std::array<vk::WriteDescriptorSet, 2> descriptor_writes{};
+        std::array<vk::WriteDescriptorSet, 1> descriptor_writes{};
         descriptor_writes[0].sType = vk::StructureType::eWriteDescriptorSet;
         descriptor_writes[0].dstSet = m_descriptor_sets[i]; // descriptor set to update
         descriptor_writes[0].dstBinding = 0; // index binding 0
@@ -1504,13 +1592,13 @@ void Renderer::create_descriptor_sets()
         descriptor_writes[0].pImageInfo = nullptr;
         descriptor_writes[0].pTexelBufferView = nullptr;
 
-        descriptor_writes[1].sType = vk::StructureType::eWriteDescriptorSet;
-        descriptor_writes[1].dstSet = m_descriptor_sets[i]; // descriptor set to update
-        descriptor_writes[1].dstBinding = 1;
-        descriptor_writes[1].dstArrayElement = 0;
-        descriptor_writes[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
-        descriptor_writes[1].descriptorCount = 1; // how many array elements to update
-        descriptor_writes[1].pImageInfo = &image_info;
+//        descriptor_writes[1].sType = vk::StructureType::eWriteDescriptorSet;
+//        descriptor_writes[1].dstSet = m_descriptor_sets[i]; // descriptor set to update
+//        descriptor_writes[1].dstBinding = 1;
+//        descriptor_writes[1].dstArrayElement = 0;
+//        descriptor_writes[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+//        descriptor_writes[1].descriptorCount = 1; // how many array elements to update
+//        descriptor_writes[1].pImageInfo = &image_info;
 
         m_logical_device.updateDescriptorSets(static_cast<unsigned>(descriptor_writes.size()), descriptor_writes.data(), 0, nullptr);
     }

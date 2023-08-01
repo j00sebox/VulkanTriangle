@@ -9,9 +9,16 @@ struct Mesh
     u32 index_count = 0;
 };
 
+struct Material
+{
+    u32 descriptor_set;
+    u32 texture;
+    u32 sampler;
+};
+
 struct Model
 {
     Mesh mesh;
-    u32 texture;
+    Material material;
     glm::mat4 transform{1.f};
 };

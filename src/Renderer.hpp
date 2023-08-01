@@ -17,7 +17,7 @@ public:
     ~Renderer();
 
     void render(Scene* scene);
-    Model load_model(const OBJLoader& loader);
+    Model load_model(const OBJLoader& loader, const char* texture);
     void begin_frame();
     void end_frame();
     void start_renderpass(vk::CommandBuffer command_buffer, u32 image_index);
@@ -29,7 +29,6 @@ public:
     u32 create_texture(const TextureCreationInfo& texture_creation);
     u32 create_sampler(const SamplerCreationInfo& sampler_creation);
     u32 create_descriptor_set(const DescriptorSetCreationInfo& descriptor_set_creation);
-    void create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags  properties, vk::Buffer& buffer, vk::DeviceMemory& buffer_memory);
     void create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image& image, vk::DeviceMemory& image_memory);
     void create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image& image, VmaAllocation& image_vma);
     vk::ImageView create_image_view(const vk::Image& image, vk::Format format, vk::ImageAspectFlags image_aspect);

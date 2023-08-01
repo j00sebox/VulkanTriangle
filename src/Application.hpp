@@ -13,7 +13,7 @@ public:
     ~Application();
 
     void run();
-    void load_model(const char* file_name);
+    void load_model(const char* file_name, const char* texture);
 
     // FIXME
     Scene* m_scene;

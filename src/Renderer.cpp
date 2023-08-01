@@ -121,12 +121,12 @@ void Renderer::render(Scene* scene)
         m_command_buffers[m_current_frame].drawIndexed(model.mesh.index_count, 1, 0, 0, 0);
     }
     end_frame();
-    //draw_frame(m_current_frame, scene->models[0].mesh);
+
     m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 // TODO: move outta here
-Model Renderer::load_model(const OBJLoader& loader)
+Model Renderer::load_model(const OBJLoader& loader, const char* texture)
 {
     Mesh mesh{};
     std::vector<Vertex> vertices = loader.get_vertices();
@@ -147,7 +147,7 @@ Model Renderer::load_model(const OBJLoader& loader)
     Material material{};
     material.texture = create_texture({
         .format = vk::Format::eR8G8B8A8Srgb,
-        .image_src = "../textures/viking_room.png"
+        .image_src = texture
     });
 
     material.sampler = create_sampler({
@@ -567,44 +567,6 @@ vk::ImageView Renderer::create_image_view(const vk::Image& image, vk::Format for
     }
 
     return image_view;
-}
-
-void Renderer::create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags  properties, vk::Buffer& buffer, vk::DeviceMemory& buffer_memory)
-{
-    vk::BufferCreateInfo buffer_info{};
-    buffer_info.sType = vk::StructureType::eBufferCreateInfo;
-    buffer_info.size = size;
-    buffer_info.usage = usage;
-    buffer_info.sharingMode = vk::SharingMode::eExclusive;
-
-    if(m_logical_device.createBuffer(&buffer_info, nullptr, &buffer) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to create buffer!");
-    }
-
-    // for some reason to still need to allocate memory for this buffer
-    // this struct contains:
-    // - size: size of the required amount of memory in bytes, may differ from buffer_info.size
-    // - alignment: the offset where the buffer begins in allocated region of memory
-    // - memoryTypeBits: Bit field of the memory types that are suitable for the buffer
-    vk::MemoryRequirements memory_requirements;
-    m_logical_device.getBufferMemoryRequirements(buffer, &memory_requirements);
-
-    // in a real world application you're not supposed to call vk::AllocateMemory for every buffer
-    // the max number of simultaneous memory allocations is limited by the maxMemoryAllocationCount physical device limit
-    // this can be as low as 4096
-    // you want to use a custom allocator like VMA that splits up a single allocation among many different objects
-    vk::MemoryAllocateInfo alloc_info{};
-    alloc_info.sType = vk::StructureType::eMemoryAllocateInfo;
-    alloc_info.allocationSize = memory_requirements.size;
-    alloc_info.memoryTypeIndex = DeviceHelper::find_memory_type(memory_requirements.memoryTypeBits, properties, m_physical_device);
-
-    if(m_logical_device.allocateMemory(&alloc_info, nullptr, &buffer_memory) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to allocate buffer memory!");
-    }
-
-    m_logical_device.bindBufferMemory(buffer, buffer_memory, 0);
 }
 
 u32 Renderer::create_buffer(const BufferCreationInfo& buffer_creation)

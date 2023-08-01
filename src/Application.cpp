@@ -57,10 +57,10 @@ void Application::run()
     m_engine->wait_for_device_idle();
 }
 
-void Application::load_model(const char* file_name)
+void Application::load_model(const char* file_name, const char* texture)
 {
     OBJLoader loader(file_name);
-    m_scene->add_model(m_engine->load_model(loader));
+    m_scene->add_model(m_engine->load_model(loader, texture));
 }
 
 float Application::get_delta_time()

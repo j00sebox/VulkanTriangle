@@ -28,7 +28,6 @@ public:
     u32 create_buffer(const BufferCreationInfo& buffer_creation);
     u32 create_texture(const TextureCreationInfo& texture_creation);
     u32 create_sampler(const SamplerCreationInfo& sampler_creation);
-    u32 create_descriptor_set_layout(const DescriptorSetLayoutCreationInfo& descriptor_set_layout_creation);
     u32 create_descriptor_set(const DescriptorSetCreationInfo& descriptor_set_creation);
     void create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags  properties, vk::Buffer& buffer, vk::DeviceMemory& buffer_memory);
     void create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image& image, vk::DeviceMemory& image_memory);
@@ -38,6 +37,7 @@ public:
 
     void destroy_buffer(u32 buffer_handle);
     void destroy_texture(u32 texture_handle);
+    void destroy_sampler(u32 sampler_handle);
 
     void wait_for_device_idle() { m_logical_device.waitIdle(); }
 

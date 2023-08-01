@@ -36,14 +36,6 @@ struct Sampler
     vk::SamplerAddressMode            address_mode_w;
 };
 
-struct DescriptorSetLayout
-{
-    VkDescriptorSetLayout           vk_descriptor_set_layout;
-
-    VkDescriptorSetLayoutBinding    vk_binding;
-    u32                             num_bindings;
-};
-
 struct DescriptorSet
 {
     vk::DescriptorSet                 vk_descriptor_set;
@@ -79,27 +71,15 @@ struct SamplerCreationInfo
     vk::SamplerAddressMode          w_mode;
 };
 
-struct DescriptorSetLayoutCreationInfo
-{
-    struct Binding
-    {
-
-        VkDescriptorType            type    = VK_DESCRIPTOR_TYPE_MAX_ENUM;
-        u16                         start   = 0;
-        u16                         count   = 0;
-    };
-
-    Binding                         bindings[8];
-    u32                             num_bindings;
-};
 
 // FIXME: naughty magic numbers
 struct DescriptorSetCreationInfo
 {
-    u32                             resource_handles[8];
-    u32                             sampler_handles[8];
-    u16                             bindings[8];
+    u32                             resource_handles[8]{};
+    u32                             sampler_handles[8]{};
+    u16                             bindings[8]{};
+    vk::DescriptorType              types[8]{};
 
     vk::DescriptorSetLayout         layout;
-    u32                             num_resources;
+    u32                             num_resources{};
 };

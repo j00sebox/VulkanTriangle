@@ -66,6 +66,8 @@ Renderer::~Renderer()
 
     m_logical_device.destroyDescriptorPool(m_descriptor_pool, nullptr);
     m_logical_device.destroyDescriptorSetLayout(m_descriptor_set_layout, nullptr);
+    m_logical_device.destroyDescriptorSetLayout(m_camera_data_layout, nullptr);
+    m_logical_device.destroyDescriptorSetLayout(m_textured_set_layout, nullptr);
 
     vmaDestroyAllocator(m_allocator);
 
@@ -169,6 +171,8 @@ Model Renderer::load_model(const OBJLoader& loader)
        .resource_handles = { material.texture },
        .sampler_handles = { material.sampler },
        .bindings = {0},
+       .types = {vk::DescriptorType::eCombinedImageSampler},
+       .layout = m_textured_set_layout,
        .num_resources = 1
     });
 
@@ -767,7 +771,7 @@ u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_
     allocInfo.sType = vk::StructureType::eDescriptorSetAllocateInfo;
     allocInfo.descriptorPool = m_descriptor_pool;
     allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &m_textured_set_layout;
+    allocInfo.pSetLayouts = &descriptor_set_creation.layout;
 
     if(vk::Result result = m_logical_device.allocateDescriptorSets(&allocInfo, &descriptor_set->vk_descriptor_set); result != vk::Result::eSuccess)
     {
@@ -775,24 +779,39 @@ u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_
         throw std::runtime_error("failed to create descriptor set!");
     }
 
-    auto* texture = static_cast<Texture*>(m_texture_pool.access(descriptor_set_creation.resource_handles[0]));
-    auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(descriptor_set_creation.resource_handles[0]));
+    vk::WriteDescriptorSet descriptor_writes[descriptor_set_creation.num_resources];
 
-    vk::DescriptorImageInfo descriptor_info{};
-    descriptor_info.imageView = texture->vk_image_view;
-    descriptor_info.sampler = sampler->vk_sampler;
-    descriptor_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    for(int i = 0; i < descriptor_set_creation.num_resources; ++i)
+    {
+        switch(descriptor_set_creation.types[i])
+        {
+            case vk::DescriptorType::eUniformBuffer:
+            {
+               break;
+            }
+            case vk::DescriptorType::eCombinedImageSampler:
+            {
+                auto* texture = static_cast<Texture*>(m_texture_pool.access(descriptor_set_creation.resource_handles[i]));
+                auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(descriptor_set_creation.resource_handles[i]));
 
-    std::array<vk::WriteDescriptorSet, 1> descriptor_writes{};
-    descriptor_writes[0].sType = vk::StructureType::eWriteDescriptorSet;
-    descriptor_writes[0].dstSet = descriptor_set->vk_descriptor_set; // descriptor set to update
-    descriptor_writes[0].dstBinding = descriptor_set_creation.bindings[0];
-    descriptor_writes[0].dstArrayElement = 0;
-    descriptor_writes[0].descriptorType = vk::DescriptorType::eCombinedImageSampler;
-    descriptor_writes[0].descriptorCount = 1; // how many array elements to update
-    descriptor_writes[0].pImageInfo = &descriptor_info;
+                vk::DescriptorImageInfo descriptor_info{};
+                descriptor_info.imageView = texture->vk_image_view;
+                descriptor_info.sampler = sampler->vk_sampler;
+                descriptor_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
-    m_logical_device.updateDescriptorSets(static_cast<unsigned>(descriptor_writes.size()), descriptor_writes.data(), 0, nullptr);
+                descriptor_writes[i].sType = vk::StructureType::eWriteDescriptorSet;
+                descriptor_writes[i].dstSet = descriptor_set->vk_descriptor_set; // descriptor set to update
+                descriptor_writes[i].dstBinding = descriptor_set_creation.bindings[i];
+                descriptor_writes[i].dstArrayElement = 0;
+                descriptor_writes[i].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+                descriptor_writes[i].descriptorCount = 1; // how many array elements to update
+                descriptor_writes[i].pImageInfo = &descriptor_info;
+                break;
+            }
+        }
+    }
+
+    m_logical_device.updateDescriptorSets(descriptor_set_creation.num_resources, descriptor_writes, 0, nullptr);
 
     return descriptor_set_handle;
 }
@@ -863,6 +882,13 @@ void Renderer::destroy_texture(u32 texture_handle)
     m_logical_device.destroyImageView(texture->vk_image_view, nullptr);
     vmaDestroyImage(m_allocator, texture->vk_image, texture->vma_allocation);
     m_texture_pool.free(texture_handle);
+}
+
+void Renderer::destroy_sampler(u32 sampler_handle)
+{
+    auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(sampler_handle));
+    m_logical_device.destroySampler(sampler->vk_sampler, nullptr);
+    m_sampler_pool.free(sampler_handle);
 }
 
 void Renderer::create_swapchain()

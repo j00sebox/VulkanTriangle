@@ -65,6 +65,7 @@ private:
     vk::DescriptorSetLayout m_textured_set_layout;
     vk::DescriptorPool m_descriptor_pool;
     std::vector<vk::DescriptorSet> m_descriptor_sets;
+    std::vector<u32> m_camera_sets;
     vk::PipelineLayout m_pipeline_layout;
     vk::Pipeline m_graphics_pipeline;
 
@@ -94,43 +95,28 @@ private:
     vk::DeviceMemory m_depth_image_memory;
     vk::ImageView m_depth_image_view;
 
-    // TODO: remove
-    vk::Image m_texture_image;
-    vk::DeviceMemory m_texture_image_memory;
-    vk::ImageView m_texture_image_view;
-    vk::Sampler m_texture_sampler;
-    const std::string TEXTURE_PATH = "../textures/viking_room.png";
-
     ResourcePool m_buffer_pool;
     ResourcePool m_texture_pool;
     ResourcePool m_sampler_pool;
     ResourcePool m_descriptor_set_pool;
 
     // uniform buffers
-    std::vector<vk::Buffer> m_uniform_buffers;
-    std::vector<vk::DeviceMemory> m_uniform_buffers_memory;
-    std::vector<void*> m_uniform_buffers_mapped;
+    std::vector<u32> m_camera_buffers;
+    std::vector<void*> m_camera_buffers_mapped;
 
     void create_instance();
     void create_surface();
     void create_device();
     void create_swapchain();
     void create_render_pass();
-    void create_descriptor_set_layout();
     void create_graphics_pipeline();
     void create_command_pool();
     void create_depth_resources();
     void create_framebuffers();
-    void create_texture_image();
-    void create_texture_image_view();
-    void create_texture_sampler();
-    void create_uniform_buffers();
     void create_descriptor_pool();
-    void create_descriptor_sets();
+    void init_descriptor_sets();
     void create_command_buffer();
     void create_sync_objects();
-
-    void init_descriptor_sets();
 
     void cleanup_swapchain();
     void copy_buffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size);

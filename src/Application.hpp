@@ -14,6 +14,7 @@ public:
 
     void run();
     void load_model(const char* file_name, const char* texture);
+    void load_primitive(const char* primitive_name);
 
     // FIXME
     Scene* m_scene;

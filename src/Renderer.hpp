@@ -8,7 +8,6 @@
 #include "GPUResources.hpp"
 #include "Memory.hpp"
 #include "Components.hpp"
-#include "OBJLoader.hpp"
 
 class Renderer
 {
@@ -17,7 +16,6 @@ public:
     ~Renderer();
 
     void render(Scene* scene);
-    Model load_model(const OBJLoader& loader, const char* texture);
     void begin_frame();
     void end_frame();
     void start_renderpass(vk::CommandBuffer command_buffer, u32 image_index);
@@ -39,6 +37,8 @@ public:
     void destroy_sampler(u32 sampler_handle);
 
     void wait_for_device_idle() { m_logical_device.waitIdle(); }
+
+    [[nodiscard]] const vk::DescriptorSetLayout& get_texture_layout() const { return m_textured_set_layout; }
 
 private:
     GLFWwindow* m_window;

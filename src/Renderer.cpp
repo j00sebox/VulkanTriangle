@@ -125,51 +125,6 @@ void Renderer::render(Scene* scene)
     m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-// TODO: move outta here
-Model Renderer::load_model(const OBJLoader& loader, const char* texture)
-{
-    Mesh mesh{};
-    std::vector<Vertex> vertices = loader.get_vertices();
-    mesh.vertex_buffer = create_buffer({
-        .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-        .size = (u32)(sizeof(vertices[0]) * vertices.size()),
-        .data = vertices.data()
-    });
-
-    std::vector<u32> indices = loader.get_indices();
-    mesh.index_count = indices.size();
-    mesh.index_buffer = create_buffer({
-        .usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-        .size = (u32)(sizeof(indices[0]) * indices.size()),
-        .data = indices.data()
-    });
-
-    Material material{};
-    material.texture = create_texture({
-        .format = vk::Format::eR8G8B8A8Srgb,
-        .image_src = texture
-    });
-
-    material.sampler = create_sampler({
-        .min_filter = vk::Filter::eLinear,
-        .mag_filter = vk::Filter::eLinear,
-        .u_mode = vk::SamplerAddressMode::eRepeat,
-        .v_mode = vk::SamplerAddressMode::eRepeat,
-        .w_mode = vk::SamplerAddressMode::eRepeat
-    });
-
-    material.descriptor_set = create_descriptor_set({
-       .resource_handles = { material.texture },
-       .sampler_handles = { material.sampler },
-       .bindings = {0},
-       .types = {vk::DescriptorType::eCombinedImageSampler},
-       .layout = m_textured_set_layout,
-       .num_resources = 1
-    });
-
-    return { .mesh = mesh, .material = material };
-}
-
 void Renderer::create_instance()
 {
     if (m_enable_validation_layers && !check_validation_layer_support())

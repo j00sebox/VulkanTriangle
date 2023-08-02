@@ -5,9 +5,8 @@ int main()
 {
     // HelloTriangle app;
     Application app(800, 600);
-    app.load_model("../models/viking_room.obj", "../textures/viking_room.png");
-    app.load_model("../models/teapot.obj", "../textures/statue_face.jpg");
-    app.m_scene->models.back().transform = glm::scale(glm::mat4(1.f), {0.1f, 0.1f, 0.1f});
+    app.load_model("../models/bunny/scene.gltf", "../textures/white_on_white.jpeg");
+    // app.load_primitive("cube");
 
     try
     {

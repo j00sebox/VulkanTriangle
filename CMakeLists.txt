@@ -35,7 +35,6 @@ add_subdirectory(external/glm)
 add_subdirectory(external/imgui)
 add_subdirectory(external/stb)
 add_subdirectory(external/assimp)
-add_subdirectory(external/tinyobjloader)
 
 include(src/CMakeLists.txt)
 add_executable(${PROJECT_NAME} ${SOURCE_FILES})
@@ -49,8 +48,7 @@ target_include_directories(${PROJECT_NAME}
         PUBLIC external/imgui
         PUBLIC external/stb
         PUBLIC external/assimp/include
-        PUBLIC external/tinyobjloader
         PUBLIC external/vma
 )
 
-target_link_libraries(${PROJECT_NAME} glfw vulkan IMGUI stb assimp tinyobjloader)
+target_link_libraries(${PROJECT_NAME} glfw vulkan IMGUI stb assimp)

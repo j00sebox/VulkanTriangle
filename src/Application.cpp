@@ -1,5 +1,6 @@
 #include "Application.hpp"
 #include "Input.hpp"
+#include "ModelLoader.hpp"
 
 Application::Application(int width, int height)
 {
@@ -59,8 +60,30 @@ void Application::run()
 
 void Application::load_model(const char* file_name, const char* texture)
 {
-    OBJLoader loader(file_name);
-    m_scene->add_model(m_engine->load_model(loader, texture));
+    ModelLoader loader(m_engine, file_name);
+
+    Mesh mesh{};
+    loader.load_mesh(mesh);
+
+    Material material{};
+    ModelLoader::load_texture(m_engine, texture, material);
+
+    // TODO: remove later
+    glm::mat4 transform = glm::translate(glm::mat4(1.f), {0.f, 0.f, 2.f});
+    transform = glm::rotate(transform, glm::radians(180.f), {0.f, 1.f, 0.f});
+    transform = glm::rotate(transform, glm::radians(90.f), {1.f, 0.f, 0.f});
+    transform = glm::scale(transform, {5.f, 5.f, 5.f});
+
+    m_scene->add_model({ .mesh = mesh, .material = material, .transform = transform });
+}
+
+void Application::load_primitive(const char* primitive_name)
+{
+    Mesh mesh{};
+    Material material{};
+    ModelLoader::load_primitive(m_engine, str_to_primitive_type(primitive_name), mesh);
+    ModelLoader::load_texture(m_engine, "../textures/white_on_white.jpeg", material);
+    m_scene->add_model({ .mesh = mesh, .material = material });
 }
 
 float Application::get_delta_time()

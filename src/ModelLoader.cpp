@@ -165,12 +165,12 @@ void ModelLoader::load_texture(Renderer* renderer, const char* texture_path, Mat
     });
 
     material.descriptor_set = renderer->create_descriptor_set({
-        .resource_handles = { material.texture },
+        .resource_handles = { material.texture, k_invalid_texture_handle, k_invalid_texture_handle, k_invalid_texture_handle },
         .sampler_handles = { material.sampler },
-        .bindings = {0},
-        .types = {vk::DescriptorType::eCombinedImageSampler},
+        .bindings = {0, 1, 2, 3},
+        .types = {vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler},
         .layout = renderer->get_texture_layout(),
-        .num_resources = 1
+        .num_resources = 4
     });
 }
 

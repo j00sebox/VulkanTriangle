@@ -719,21 +719,42 @@ u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_
             }
             case vk::DescriptorType::eCombinedImageSampler:
             {
-                auto* texture = static_cast<Texture*>(m_texture_pool.access(descriptor_set_creation.resource_handles[i]));
-                auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(descriptor_set_creation.resource_handles[i]));
+                if(descriptor_set_creation.resource_handles[i] == k_invalid_texture_handle)
+                {
+                    auto* texture = static_cast<Texture*>(m_texture_pool.access(descriptor_set_creation.resource_handles[0]));
+                    auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(descriptor_set_creation.resource_handles[0]));
 
-                vk::DescriptorImageInfo descriptor_info{};
-                descriptor_info.imageView = texture->vk_image_view;
-                descriptor_info.sampler = sampler->vk_sampler;
-                descriptor_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+                    vk::DescriptorImageInfo descriptor_info{};
+                    descriptor_info.imageView = texture->vk_image_view;
+                    descriptor_info.sampler = sampler->vk_sampler;
+                    descriptor_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
-                descriptor_writes[i].sType = vk::StructureType::eWriteDescriptorSet;
-                descriptor_writes[i].dstSet = descriptor_set->vk_descriptor_set; // descriptor set to update
-                descriptor_writes[i].dstBinding = descriptor_set_creation.bindings[i];
-                descriptor_writes[i].dstArrayElement = 0;
-                descriptor_writes[i].descriptorType = vk::DescriptorType::eCombinedImageSampler;
-                descriptor_writes[i].descriptorCount = 1; // how many array elements to update
-                descriptor_writes[i].pImageInfo = &descriptor_info;
+                    descriptor_writes[i].sType = vk::StructureType::eWriteDescriptorSet;
+                    descriptor_writes[i].dstSet = descriptor_set->vk_descriptor_set; // descriptor set to update
+                    descriptor_writes[i].dstBinding = descriptor_set_creation.bindings[i];
+                    descriptor_writes[i].dstArrayElement = 0;
+                    descriptor_writes[i].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+                    descriptor_writes[i].descriptorCount = 1; // how many array elements to update
+                    descriptor_writes[i].pImageInfo = &descriptor_info;
+                }
+                else
+                {
+                    auto* texture = static_cast<Texture*>(m_texture_pool.access(descriptor_set_creation.resource_handles[i]));
+                    auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(descriptor_set_creation.resource_handles[i]));
+
+                    vk::DescriptorImageInfo descriptor_info{};
+                    descriptor_info.imageView = texture->vk_image_view;
+                    descriptor_info.sampler = sampler->vk_sampler;
+                    descriptor_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+
+                    descriptor_writes[i].sType = vk::StructureType::eWriteDescriptorSet;
+                    descriptor_writes[i].dstSet = descriptor_set->vk_descriptor_set; // descriptor set to update
+                    descriptor_writes[i].dstBinding = descriptor_set_creation.bindings[i];
+                    descriptor_writes[i].dstArrayElement = 0;
+                    descriptor_writes[i].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+                    descriptor_writes[i].descriptorCount = 1; // how many array elements to update
+                    descriptor_writes[i].pImageInfo = &descriptor_info;
+                }
                 break;
             }
         }
@@ -1009,17 +1030,23 @@ void Renderer::init_descriptor_sets()
         throw std::runtime_error("failed to create descriptor set layout!");
     }
 
-    vk::DescriptorSetLayoutBinding textured_layout_binding{};
-    textured_layout_binding.binding = 0;
-    textured_layout_binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
-    textured_layout_binding.descriptorCount = 1;
-    textured_layout_binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
-    textured_layout_binding.pImmutableSamplers = nullptr;
+    vk::DescriptorSetLayoutBinding texture_set_layout_bindings[4];
+    for(int i = 0; i < 4; ++i)
+    {
+        vk::DescriptorSetLayoutBinding textured_layout_binding{};
+        textured_layout_binding.binding = i;
+        textured_layout_binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+        textured_layout_binding.descriptorCount = 1;
+        textured_layout_binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+        textured_layout_binding.pImmutableSamplers = nullptr;
+
+        texture_set_layout_bindings[i] = textured_layout_binding;
+    }
 
     vk::DescriptorSetLayoutCreateInfo textured_layout_info{};
     textured_layout_info.sType = vk::StructureType::eDescriptorSetLayoutCreateInfo;
-    textured_layout_info.bindingCount = 1;
-    textured_layout_info.pBindings = &textured_layout_binding;
+    textured_layout_info.bindingCount = 4;
+    textured_layout_info.pBindings = texture_set_layout_bindings;
 
     if(m_logical_device.createDescriptorSetLayout(&textured_layout_info, nullptr, &m_textured_set_layout) != vk::Result::eSuccess)
     {
@@ -1056,7 +1083,6 @@ void Renderer::init_descriptor_sets()
            .num_resources = 1,
         });
     }
-
 }
 
 void Renderer::create_graphics_pipeline()

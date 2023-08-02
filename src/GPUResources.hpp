@@ -2,6 +2,8 @@
 #include "config.hpp"
 #include <vk_mem_alloc.h>
 
+const u32 k_invalid_texture_handle = UINT32_MAX;
+
 struct Buffer
 {
     VkBuffer                        vk_buffer;

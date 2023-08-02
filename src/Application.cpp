@@ -69,8 +69,7 @@ void Application::load_model(const char* file_name, const char* texture)
     ModelLoader::load_texture(m_engine, texture, material);
 
     // TODO: remove later
-    glm::mat4 transform = glm::translate(glm::mat4(1.f), {0.f, 0.f, 2.f});
-    transform = glm::rotate(transform, glm::radians(180.f), {0.f, 1.f, 0.f});
+    glm::mat4 transform = glm::translate(glm::mat4(1.f), {0.f, 0.f, -2.f});
     transform = glm::rotate(transform, glm::radians(90.f), {1.f, 0.f, 0.f});
     transform = glm::scale(transform, {5.f, 5.f, 5.f});
 

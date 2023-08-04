@@ -35,6 +35,12 @@ Renderer::Renderer(GLFWwindow* window) :
     create_framebuffers();
     create_command_buffer();
     create_sync_objects();
+
+    // create null texture
+    m_null_texture = create_texture({
+        .format = vk::Format::eR8G8B8A8Srgb,
+        .image_src = "../textures/null_texture.png"
+    });
 }
 
 Renderer::~Renderer()
@@ -51,6 +57,8 @@ Renderer::~Renderer()
         vmaUnmapMemory(m_allocator, buffer->vma_allocation);
         destroy_buffer(m_camera_buffers[i]);
     }
+
+    destroy_texture(m_null_texture);
 
     cleanup_swapchain();
 
@@ -385,7 +393,9 @@ void Renderer::start_renderpass(vk::CommandBuffer command_buffer, u32 image_inde
     renderpass_info.renderArea.extent = m_swapchain_extent;
 
     std::array<vk::ClearValue, 2> clear_values{};
-    clear_values[0].color = {0.f, 0.f, 0.f, 1.f};
+    vk::ClearColorValue value;
+    value.float32[0] = 0.f; value.float32[1] = 0.f; value.float32[2] = 0.f; value.float32[3] = 1.f;
+    clear_values[0].color = value;
     clear_values[1].depthStencil = vk::ClearDepthStencilValue{1.f, 0};
 
     renderpass_info.clearValueCount = static_cast<unsigned>(clear_values.size());
@@ -719,42 +729,22 @@ u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_
             }
             case vk::DescriptorType::eCombinedImageSampler:
             {
-                if(descriptor_set_creation.resource_handles[i] == k_invalid_texture_handle)
-                {
-                    auto* texture = static_cast<Texture*>(m_texture_pool.access(descriptor_set_creation.resource_handles[0]));
-                    auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(descriptor_set_creation.resource_handles[0]));
+                auto* texture = static_cast<Texture*>(m_texture_pool.access(descriptor_set_creation.resource_handles[i]));
+                auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(descriptor_set_creation.resource_handles[i]));
 
-                    vk::DescriptorImageInfo descriptor_info{};
-                    descriptor_info.imageView = texture->vk_image_view;
-                    descriptor_info.sampler = sampler->vk_sampler;
-                    descriptor_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+                vk::DescriptorImageInfo descriptor_info{};
+                descriptor_info.imageView = texture->vk_image_view;
+                descriptor_info.sampler = sampler->vk_sampler;
+                descriptor_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
-                    descriptor_writes[i].sType = vk::StructureType::eWriteDescriptorSet;
-                    descriptor_writes[i].dstSet = descriptor_set->vk_descriptor_set; // descriptor set to update
-                    descriptor_writes[i].dstBinding = descriptor_set_creation.bindings[i];
-                    descriptor_writes[i].dstArrayElement = 0;
-                    descriptor_writes[i].descriptorType = vk::DescriptorType::eCombinedImageSampler;
-                    descriptor_writes[i].descriptorCount = 1; // how many array elements to update
-                    descriptor_writes[i].pImageInfo = &descriptor_info;
-                }
-                else
-                {
-                    auto* texture = static_cast<Texture*>(m_texture_pool.access(descriptor_set_creation.resource_handles[i]));
-                    auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(descriptor_set_creation.resource_handles[i]));
+                descriptor_writes[i].sType = vk::StructureType::eWriteDescriptorSet;
+                descriptor_writes[i].dstSet = descriptor_set->vk_descriptor_set; // descriptor set to update
+                descriptor_writes[i].dstBinding = descriptor_set_creation.bindings[i];
+                descriptor_writes[i].dstArrayElement = 0;
+                descriptor_writes[i].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+                descriptor_writes[i].descriptorCount = 1; // how many array elements to update
+                descriptor_writes[i].pImageInfo = &descriptor_info;
 
-                    vk::DescriptorImageInfo descriptor_info{};
-                    descriptor_info.imageView = texture->vk_image_view;
-                    descriptor_info.sampler = sampler->vk_sampler;
-                    descriptor_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-
-                    descriptor_writes[i].sType = vk::StructureType::eWriteDescriptorSet;
-                    descriptor_writes[i].dstSet = descriptor_set->vk_descriptor_set; // descriptor set to update
-                    descriptor_writes[i].dstBinding = descriptor_set_creation.bindings[i];
-                    descriptor_writes[i].dstArrayElement = 0;
-                    descriptor_writes[i].descriptorType = vk::DescriptorType::eCombinedImageSampler;
-                    descriptor_writes[i].descriptorCount = 1; // how many array elements to update
-                    descriptor_writes[i].pImageInfo = &descriptor_info;
-                }
                 break;
             }
         }

@@ -39,6 +39,7 @@ public:
     void wait_for_device_idle() { m_logical_device.waitIdle(); }
 
     [[nodiscard]] const vk::DescriptorSetLayout& get_texture_layout() const { return m_textured_set_layout; }
+    [[nodiscard]] u32 get_null_texture_handle() const { return m_null_texture; }
 
 private:
     GLFWwindow* m_window;
@@ -102,6 +103,9 @@ private:
     // uniform buffers
     std::vector<u32> m_camera_buffers;
     std::vector<void*> m_camera_buffers_mapped;
+
+    // texture used when loader can't find one
+    u32 m_null_texture;
 
     void create_instance();
     void create_surface();

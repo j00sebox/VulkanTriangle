@@ -13,13 +13,18 @@ layout(location = 0) out vec4 out_colour;
 
 vec4 light_colour = vec4(1.0, 1.0, 1.0, 1.0);
 
+bool is_texture_valid(sampler2D texture)
+{
+    return(textureSize(texture, 0).x > 1);
+}
+
 void main()
 {
     vec4 diffuse_colour;
     vec4 specular_factor;
     vec3 normal;
 
-    if(textureSize(diffuse_sampler, 0).x > 0)
+    if(is_texture_valid(diffuse_sampler))
     {
         diffuse_colour = texture(diffuse_sampler, v_tex_coord);
     }
@@ -28,7 +33,7 @@ void main()
         diffuse_colour = vec4(1.0, 0.0, 0.0, 1.0);
     }
 
-    if(textureSize(normal_sampler, 0).x > 0)
+    if(is_texture_valid(normal_sampler))
     {
         normal = vec3(texture(normal_sampler, v_tex_coord));
     }

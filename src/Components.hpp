@@ -12,7 +12,7 @@ struct Mesh
 struct Material
 {
     u32 descriptor_set;
-    u32 texture;
+    u32 textures[4];
     u32 sampler;
 };
 

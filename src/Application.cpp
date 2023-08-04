@@ -27,7 +27,14 @@ Application::~Application()
     {
         m_engine->destroy_buffer(model.mesh.vertex_buffer);
         m_engine->destroy_buffer(model.mesh.index_buffer);
-        m_engine->destroy_texture(model.material.texture);
+
+        for(u32 texture : model.material.textures)
+        {
+            if(texture != m_engine->get_null_texture_handle())
+            {
+                m_engine->destroy_texture(texture);
+            }
+        }
         m_engine->destroy_sampler(model.material.sampler);
     }
 

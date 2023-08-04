@@ -49,10 +49,14 @@ void ModelLoader::load_material(Material& material)
             "none"
         };
 
-        material.texture = m_renderer->create_texture({
+        material.textures[0] = m_renderer->create_texture({
             .format = vk::Format::eR8G8B8A8Srgb,
             .image_src = textures[0].c_str()
         });
+
+        material.textures[1] = m_renderer->get_null_texture_handle();
+        material.textures[2] = m_renderer->get_null_texture_handle();
+        material.textures[3] = m_renderer->get_null_texture_handle();
 
         material.sampler = m_renderer->create_sampler({
             .min_filter = vk::Filter::eLinear,
@@ -63,12 +67,12 @@ void ModelLoader::load_material(Material& material)
         });
 
         material.descriptor_set = m_renderer->create_descriptor_set({
-            .resource_handles = { material.texture },
-            .sampler_handles = { material.sampler },
-            .bindings = {0},
-            .types = {vk::DescriptorType::eCombinedImageSampler},
+            .resource_handles = { material.textures[0], m_renderer->get_null_texture_handle(), m_renderer->get_null_texture_handle(), m_renderer->get_null_texture_handle() },
+            .sampler_handles = { material.sampler, material.sampler, material.sampler, material.sampler },
+            .bindings = {0, 1, 2, 3},
+            .types = {vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler},
             .layout = m_renderer->get_texture_layout(),
-            .num_resources = 1
+            .num_resources = 4
         });
         return;
     }
@@ -84,10 +88,25 @@ void ModelLoader::load_material(Material& material)
     textures[2] = (normal_texture_path.length > 0) ? m_base_dir + normal_texture_path.C_Str() : "none";
     textures[3] = (occlusion_texture_path.length > 0) ? m_base_dir + occlusion_texture_path.C_Str() : "none";
 
-    material.texture = m_renderer->create_texture({
+    material.textures[0] = m_renderer->create_texture({
         .format = vk::Format::eR8G8B8A8Srgb,
         .image_src = textures[0].c_str()
     });
+
+    for(int i = 1; i < 4; ++i)
+    {
+        if(textures[i] != "none")
+        {
+            material.textures[i] = m_renderer->create_texture({
+                .format = vk::Format::eR8G8B8A8Srgb,
+                .image_src = textures[i].c_str()
+            });
+        }
+        else
+        {
+            material.textures[i] = m_renderer->get_null_texture_handle();
+        }
+    }
 
     material.sampler = m_renderer->create_sampler({
         .min_filter = vk::Filter::eLinear,
@@ -98,12 +117,12 @@ void ModelLoader::load_material(Material& material)
     });
 
     material.descriptor_set = m_renderer->create_descriptor_set({
-        .resource_handles = { material.texture },
-        .sampler_handles = { material.sampler },
-        .bindings = {0},
-        .types = {vk::DescriptorType::eCombinedImageSampler},
+        .resource_handles = { material.textures[0], material.textures[1], material.textures[2], material.textures[3] },
+        .sampler_handles = { material.sampler, material.sampler, material.sampler, material.sampler },
+        .bindings = {0, 1, 2, 3},
+        .types = {vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler},
         .layout = m_renderer->get_texture_layout(),
-        .num_resources = 1
+        .num_resources = 4
     });
 }
 
@@ -149,9 +168,10 @@ void ModelLoader::load_primitive(Renderer* renderer, PrimitiveTypes primitive, M
     });
 }
 
+// FIXME: loading single texture should not create a descriptor set
 void ModelLoader::load_texture(Renderer* renderer, const char* texture_path, Material& material)
 {
-    material.texture = renderer->create_texture({
+    material.textures[0] = renderer->create_texture({
         .format = vk::Format::eR8G8B8A8Srgb,
         .image_src = texture_path
     });
@@ -165,7 +185,7 @@ void ModelLoader::load_texture(Renderer* renderer, const char* texture_path, Mat
     });
 
     material.descriptor_set = renderer->create_descriptor_set({
-        .resource_handles = { material.texture, k_invalid_texture_handle, k_invalid_texture_handle, k_invalid_texture_handle },
+        .resource_handles = { material.textures[0], renderer->get_null_texture_handle(), renderer->get_null_texture_handle(), renderer->get_null_texture_handle() },
         .sampler_handles = { material.sampler },
         .bindings = {0, 1, 2, 3},
         .types = {vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler},

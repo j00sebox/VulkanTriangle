@@ -6,12 +6,15 @@ layout(set = 1, binding = 1) uniform sampler2D specular_sampler;
 layout(set = 1, binding = 2) uniform sampler2D normal_sampler;
 layout(set = 1, binding = 3) uniform sampler2D occlusion_sampler;
 
-layout(location = 0) in vec3 v_normal;
-layout(location = 1) in vec2 v_tex_coord;
-layout(location = 2) in vec3 camera_position;
+layout(location = 0) in vec3 v_position;
+layout(location = 1) in vec3 v_normal;
+layout(location = 2) in vec2 v_tex_coord;
+layout(location = 3) in vec3 camera_position;
 
 layout(location = 0) out vec4 out_colour;
 
+// TODO: move to uniform buffer
+vec3 light_postion = vec3(0.0, 1.0, 0.0);
 vec4 light_colour = vec4(1.0, 1.0, 1.0, 1.0);
 
 bool is_texture_valid(sampler2D texture)
@@ -22,7 +25,7 @@ bool is_texture_valid(sampler2D texture)
 void main()
 {
     vec4 diffuse_colour;
-    vec4 specular_factor;
+    float specular_factor;
     vec3 normal;
 
     if(is_texture_valid(diffuse_sampler))
@@ -43,5 +46,13 @@ void main()
         normal = v_normal;
     }
 
-    out_colour = diffuse_colour;
+    vec3 l = normalize(light_postion - v_position); // light direction
+    vec3 v = normalize(camera_position - v_position); // view direction
+    vec3 h = normalize(l + v); // halfway vector
+
+    float shininess = 0.5;
+    specular_factor = pow(max(dot(normal, h), 0.0), shininess);
+    vec3 specular = vec3(light_colour * specular_factor);
+
+    out_colour = diffuse_colour + vec4(specular, 1.0);
 }

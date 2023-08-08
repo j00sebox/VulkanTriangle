@@ -8,6 +8,7 @@ layout(set = 1, binding = 3) uniform sampler2D occlusion_sampler;
 
 layout(location = 0) in vec3 v_normal;
 layout(location = 1) in vec2 v_tex_coord;
+layout(location = 2) in vec3 camera_position;
 
 layout(location = 0) out vec4 out_colour;
 

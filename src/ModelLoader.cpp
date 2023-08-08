@@ -186,7 +186,7 @@ void ModelLoader::load_texture(Renderer* renderer, const char* texture_path, Mat
 
     material.descriptor_set = renderer->create_descriptor_set({
         .resource_handles = { material.textures[0], renderer->get_null_texture_handle(), renderer->get_null_texture_handle(), renderer->get_null_texture_handle() },
-        .sampler_handles = { material.sampler },
+        .sampler_handles = { material.sampler, material.sampler, material.sampler, material.sampler },
         .bindings = {0, 1, 2, 3},
         .types = {vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler},
         .layout = renderer->get_texture_layout(),
@@ -197,6 +197,7 @@ void ModelLoader::load_texture(Renderer* renderer, const char* texture_path, Mat
 std::vector<Vertex> ModelLoader::get_vertices(aiMesh* mesh)
 {
     std::vector<Vertex> vertices;
+    vertices.reserve(mesh->mNumVertices);
     for(int i = 0; i < mesh->mNumVertices; ++i)
     {
         vertices.push_back({

@@ -48,6 +48,7 @@ private:
     vk::DispatchLoaderDynamic m_dispatch_loader;
     vk::SurfaceKHR m_surface;
     vk::PhysicalDevice m_physical_device;
+    vk::PhysicalDeviceProperties m_device_properties;
     vk::Device m_logical_device;
     VmaAllocator m_allocator;
     PoolAllocator m_pool_allocator;
@@ -125,6 +126,7 @@ private:
     void copy_buffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size);
     void copy_buffer_to_image(vk::Buffer buffer, vk::Image image, u32 width, u32 height);
     void transition_image_layout(vk::Image image, vk::Format format, vk::ImageLayout old_layout, vk::ImageLayout new_layout);
+    size_t pad_uniform_buffer(size_t original_size);
 
     vk::CommandBuffer begin_single_time_commands();
     void end_single_time_commands(vk::CommandBuffer command_buffer);

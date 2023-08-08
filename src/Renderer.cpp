@@ -13,6 +13,7 @@ struct CameraData
 {
     glm::mat4 view;
     glm::mat4 proj;
+    glm::vec3 camera_position;
 };
 
 Renderer::Renderer(GLFWwindow* window) :
@@ -88,6 +89,7 @@ Renderer::~Renderer()
 void Renderer::render(Scene* scene)
 {
     CameraData camera_data{};
+    camera_data.camera_position = scene->camera.get_pos();
     camera_data.view = scene->camera.camera_look_at();
     camera_data.proj = scene->camera.get_perspective();
 
@@ -97,7 +99,7 @@ void Renderer::render(Scene* scene)
 
     // this is the most efficient way to pass constantly changing values to the shader
     // another way to handle smaller data is to use push constants
-    memcpy(m_camera_buffers_mapped[m_current_frame], &camera_data, sizeof(camera_data));
+    memcpy(m_camera_buffers_mapped[m_current_frame], &camera_data, pad_uniform_buffer(sizeof(camera_data)));
 
     begin_frame();
     for(const Model& model : scene->models)
@@ -277,11 +279,10 @@ void Renderer::create_device()
     m_logical_device.getQueue(indices.graphics_family.value(), 0, &m_graphics_queue);
     m_logical_device.getQueue(indices.present_family.value(), 0, &m_present_queue);
 
-    vk::PhysicalDeviceProperties device_properties{};
-    m_physical_device.getProperties(&device_properties);
+    m_physical_device.getProperties(&m_device_properties);
 
     VmaAllocatorCreateInfo vma_info{};
-    vma_info.vulkanApiVersion = device_properties.apiVersion;
+    vma_info.vulkanApiVersion = m_device_properties.apiVersion;
     vma_info.physicalDevice = m_physical_device;
     vma_info.device = m_logical_device;
     vma_info.instance = m_instance;
@@ -452,24 +453,24 @@ void Renderer::create_image(u32 width, u32 height, vk::Format format, vk::ImageT
     vk::ImageCreateInfo image_info{};
     image_info.sType = vk::StructureType::eImageCreateInfo;
     image_info.imageType = vk::ImageType::e2D; // what kind of coordinate system to use
-    image_info.extent.width = static_cast<unsigned>(width);
-    image_info.extent.height = static_cast<unsigned>(height);
+    image_info.extent.width = static_cast<u32>(width);
+    image_info.extent.height = static_cast<u32>(height);
     image_info.extent.depth = 1;
     image_info.mipLevels = 1;
     image_info.arrayLayers = 1;
 
     // use the same format for the texels as the pixels in the buffer
-    image_info.format = format; // = vk::_FORMAT_R8G8B8A8_SRGB;
+    image_info.format = format;
 
     // defines how the texels are laid out in memory
-    image_info.tiling = tiling; // = vk::_IMAGE_TILING_OPTIMAL;
+    image_info.tiling = tiling;
 
     // since we are transitioning the image to a new place anyway
     image_info.initialLayout = vk::ImageLayout::eUndefined;
 
     // image will be used as a destination to copy the pixel data to
     // also want to be able to access the image from the shader
-    image_info.usage = usage; // vk::_IMAGE_USAGE_TRANSFER_DST_BIT | vk::_IMAGE_USAGE_SAMPLED_BIT;
+    image_info.usage = usage;
 
     // will only be used by one queue family
     image_info.sharingMode = vk::SharingMode::eExclusive;
@@ -597,14 +598,14 @@ u32 Renderer::create_texture(const TextureCreationInfo& texture_creation)
     vk::ImageCreateInfo image_info{};
     image_info.sType = vk::StructureType::eImageCreateInfo;
     image_info.imageType = vk::ImageType::e2D; // what kind of coordinate system to use
-    image_info.extent.width = static_cast<unsigned>(width);
-    image_info.extent.height = static_cast<unsigned>(height);
+    image_info.extent.width = static_cast<u32>(width);
+    image_info.extent.height = static_cast<u32>(height);
     image_info.extent.depth = 1;
     image_info.mipLevels = 1;
     image_info.arrayLayers = 1;
 
     // use the same format for the texels as the pixels in the buffer
-    image_info.format = vk::Format::eR8G8B8A8Srgb;
+    image_info.format = texture_creation.format;
 
     // defines how the texels are laid out in memory
     image_info.tiling = vk::ImageTiling::eOptimal;
@@ -627,13 +628,13 @@ u32 Renderer::create_texture(const TextureCreationInfo& texture_creation)
 
     vmaCreateImage(m_allocator, reinterpret_cast<const VkImageCreateInfo*>(&image_info), &memory_info, &texture->vk_image, &texture->vma_allocation, nullptr);
 
-    transition_image_layout(texture->vk_image, vk::Format::eR8G8B8A8Srgb, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+    transition_image_layout(texture->vk_image, texture_creation.format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
 
     copy_buffer_to_image(staging_buffer->vk_buffer, texture->vk_image, static_cast<unsigned>(width), static_cast<unsigned>(height));
 
-    transition_image_layout(texture->vk_image, vk::Format::eR8G8B8A8Srgb, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+    transition_image_layout(texture->vk_image, texture_creation.format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
 
-    texture->vk_image_view = create_image_view(texture->vk_image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
+    texture->vk_image_view = create_image_view(texture->vk_image, texture_creation.format, vk::ImageAspectFlagBits::eColor);
 
     destroy_buffer(staging_handle);
 
@@ -1044,11 +1045,12 @@ void Renderer::init_descriptor_sets()
     }
 
     // create the buffers for the view/projection transforms
-    u32 buffer_size = sizeof(CameraData);
+    u32 buffer_size = pad_uniform_buffer(sizeof(CameraData));
 
     m_camera_buffers.resize(MAX_FRAMES_IN_FLIGHT);
     m_camera_buffers_mapped.resize(MAX_FRAMES_IN_FLIGHT);
 
+    // TODO: combine into one big buffer
     for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         m_camera_buffers[i] = create_buffer({
@@ -1555,6 +1557,13 @@ void Renderer::transition_image_layout(vk::Image image, vk::Format format, vk::I
     );
 
     end_single_time_commands(command_buffer);
+}
+
+size_t Renderer::pad_uniform_buffer(size_t original_size)
+{
+    size_t alignment = m_device_properties.limits.minUniformBufferOffsetAlignment;
+    size_t aligned_size = (alignment + original_size - 1) & ~(alignment - 1);
+    return aligned_size;
 }
 
 vk::CommandBuffer Renderer::begin_single_time_commands()

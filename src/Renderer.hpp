@@ -65,6 +65,7 @@ private:
     vk::DescriptorSetLayout m_camera_data_layout;
     vk::DescriptorSetLayout m_textured_set_layout;
     vk::DescriptorPool m_descriptor_pool;
+    vk::DescriptorPool m_imgui_pool;
     std::vector<vk::DescriptorSet> m_descriptor_sets;
     std::vector<u32> m_camera_sets;
     vk::PipelineLayout m_pipeline_layout;
@@ -121,6 +122,7 @@ private:
     void init_descriptor_sets();
     void create_command_buffer();
     void create_sync_objects();
+    void init_imgui();
 
     void cleanup_swapchain();
     void copy_buffer(vk::Buffer src_buffer, vk::Buffer dst_buffer, vk::DeviceSize size);

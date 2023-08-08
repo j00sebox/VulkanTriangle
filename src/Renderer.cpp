@@ -7,6 +7,10 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#include <imgui.h>
+#include <backends/imgui_impl_glfw.h>
+#include <backends/imgui_impl_vulkan.h>
+
 // a descriptor layout specifies the types of resources that are going to be accessed by the pipeline
 // a descriptor set specifies the actual buffer or image resources that will be bound to the descriptors
 struct CameraData
@@ -42,10 +46,15 @@ Renderer::Renderer(GLFWwindow* window) :
         .format = vk::Format::eR8G8B8A8Srgb,
         .image_src = "../textures/null_texture.png"
     });
+
+    init_imgui();
 }
 
 Renderer::~Renderer()
 {
+    ImGui_ImplVulkan_Shutdown();
+    m_logical_device.destroyDescriptorPool(m_imgui_pool, nullptr);
+
     for(i32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         // sync objects
@@ -130,6 +139,8 @@ void Renderer::render(Scene* scene)
         // vkCmdDraw(command_buffer, static_cast<unsigned>(g_vertices.size()), 1, 0, 0);
         m_command_buffers[m_current_frame].drawIndexed(model.mesh.index_count, 1, 0, 0, 0);
     }
+
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), m_command_buffers[m_current_frame]);
     end_frame();
 
     m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -1447,6 +1458,56 @@ void Renderer::cleanup_swapchain()
     m_logical_device.destroyImageView(m_depth_image_view, nullptr);
 
     m_logical_device.destroySwapchainKHR(m_swapchain, nullptr);
+}
+
+void Renderer::init_imgui()
+{
+    vk::DescriptorPoolSize pool_sizes[] =
+    {
+            { vk::DescriptorType::eSampler, 1000 },
+            { vk::DescriptorType::eCombinedImageSampler, 1000 },
+            { vk::DescriptorType::eSampledImage, 1000 },
+            { vk::DescriptorType::eStorageImage, 1000 },
+            { vk::DescriptorType::eUniformTexelBuffer, 1000 },
+            { vk::DescriptorType::eStorageTexelBuffer, 1000 },
+            { vk::DescriptorType::eUniformBuffer, 1000 },
+            { vk::DescriptorType::eStorageBuffer, 1000 },
+            { vk::DescriptorType::eUniformBufferDynamic, 1000 },
+            { vk::DescriptorType::eStorageBufferDynamic, 1000 },
+            { vk::DescriptorType::eInputAttachment, 1000 }
+    };
+
+    vk::DescriptorPoolCreateInfo pool_info{};
+    pool_info.sType = vk::StructureType::eDescriptorPoolCreateInfo;
+    pool_info.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
+    pool_info.maxSets = 1000;
+    pool_info.poolSizeCount = std::size(pool_sizes);
+    pool_info.pPoolSizes = pool_sizes;
+
+    m_logical_device.createDescriptorPool(&pool_info, nullptr, &m_imgui_pool);
+
+    ImGui::CreateContext();
+
+    ImGui_ImplGlfw_InitForVulkan(m_window, true);
+
+    ImGui_ImplVulkan_InitInfo init_info{};
+    init_info.Instance = m_instance;
+    init_info.PhysicalDevice = m_physical_device;
+    init_info.Device = m_logical_device;
+    init_info.Queue = m_graphics_queue;
+    init_info.DescriptorPool = m_imgui_pool;
+    init_info.MinImageCount = MAX_FRAMES_IN_FLIGHT;
+    init_info.ImageCount = MAX_FRAMES_IN_FLIGHT;
+    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+
+    ImGui_ImplVulkan_Init(&init_info, m_render_pass);
+
+    vk::CommandBuffer upload_fonts = begin_single_time_commands();
+    ImGui_ImplVulkan_CreateFontsTexture(upload_fonts);
+    end_single_time_commands(upload_fonts);
+
+    //clear font textures from cpu data
+    ImGui_ImplVulkan_DestroyFontUploadObjects();
 }
 
 // memory transfer ops are executed with command buffers

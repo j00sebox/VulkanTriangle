@@ -4,7 +4,7 @@
 int main() 
 {
     // HelloTriangle app;
-    Application app(800, 600);
+    Application app(1300, 1000);
     app.load_model("../models/bunny/scene.gltf", "../textures/white_on_white.jpeg");
     // app.load_primitive("cube");
 

@@ -51,4 +51,4 @@ target_include_directories(${PROJECT_NAME}
         PUBLIC external/vma
 )
 
-target_link_libraries(${PROJECT_NAME} glfw vulkan IMGUI stb assimp)
+target_link_libraries(${PROJECT_NAME} glfw vulkan imgui stb assimp)

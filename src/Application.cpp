@@ -2,6 +2,10 @@
 #include "Input.hpp"
 #include "ModelLoader.hpp"
 
+#include <imgui.h>
+#include <backends/imgui_impl_glfw.h>
+#include <backends/imgui_impl_vulkan.h>
+
 Application::Application(int width, int height)
 {
     glfwInit();
@@ -57,6 +61,15 @@ void Application::run()
             m_running = false;
             continue;
         }
+
+        ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+
+        ImGui::NewFrame();
+
+        //imgui commands
+        ImGui::ShowDemoWindow();
+        ImGui::Render();
 
         m_scene->update(get_delta_time());
         m_engine->render(m_scene);

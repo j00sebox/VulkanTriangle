@@ -1,6 +1,7 @@
 #include "Application.hpp"
 #include "Input.hpp"
 #include "ModelLoader.hpp"
+#include "Timer.hpp"
 
 #include <imgui.h>
 #include <backends/imgui_impl_glfw.h>
@@ -52,6 +53,7 @@ Application::~Application()
 void Application::run()
 {
     m_running = true;
+    static float render_time = 0.f;
     while (!glfwWindowShouldClose(m_window) && m_running)
     {
         glfwPollEvents();
@@ -69,13 +71,17 @@ void Application::run()
 
         //imgui commands
         //ImGui::ShowDemoWindow();
-        ImGui::Begin("FPS");
+        ImGui::Begin("Settings");
+        ImGui::Text("Diagnostics"); ImGui::Text("\n");
         ImGui::Text("Avg. %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+        ImGui::Text("Render: %.1fms", render_time);
         ImGui::End();
         ImGui::Render();
 
         m_scene->update(get_delta_time());
+        Timer timer;
         m_engine->render(m_scene);
+        render_time = timer.stop();
     }
 
     m_engine->wait_for_device_idle();

@@ -139,7 +139,7 @@ private:
     // allow multiple frames to be in-flight
     // this means we allow a new frame to start being rendered without interfering with one being presented
     // meaning we need multiple command buffers, semaphores and fences
-    const u16 MAX_FRAMES_IN_FLIGHT = 2;
+    const u16 MAX_FRAMES_IN_FLIGHT = 3;
 
     // keeps track of the current frame index
     u32 m_current_frame = 0;

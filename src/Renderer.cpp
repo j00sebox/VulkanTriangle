@@ -270,7 +270,8 @@ void Renderer::create_device()
     std::set<unsigned> unique_queue_families = {indices.graphics_family.value(), indices.present_family.value()};
 
     float queue_priority = 1.f;
-    for (unsigned queue_family: unique_queue_families) {
+    for (unsigned queue_family: unique_queue_families)
+    {
         vk::DeviceQueueCreateInfo queue_create_info{};
 
         // described number of queues we want in queue family
@@ -962,24 +963,24 @@ void Renderer::create_render_pass()
     // in this case we just have a single colour buffer
     vk::AttachmentDescription colour_attachment{};
     colour_attachment.format = m_swapchain_image_format;
-    colour_attachment.samples = vk::SampleCountFlagBits::e1; // VK_SAMPLE_COUNT_1_BIT;
+    colour_attachment.samples = vk::SampleCountFlagBits::e1;
 
     // these determine what to do with the data in the attachment before and after rendering
     // applies to both colour and depth
-    colour_attachment.loadOp = vk::AttachmentLoadOp::eClear; // VK_ATTACHMENT_LOAD_OP_CLEAR; // clear at start
-    colour_attachment.storeOp = vk::AttachmentStoreOp::eStore; // VK_ATTACHMENT_STORE_OP_STORE; // rendered pixels wil be stored
+    colour_attachment.loadOp = vk::AttachmentLoadOp::eClear; // clear at start
+    colour_attachment.storeOp = vk::AttachmentStoreOp::eStore; // rendered pixels wil be stored
 
     // not using stencil now
-    colour_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare; // VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colour_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare; // VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colour_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+    colour_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
 
     // textures are represented by VKImage objects with a certain pixel format
     // initial layout specifies what layout the image will have before the render pass
     // final layout is what to transition to after the render pass
     // we set the initial layout as undefined because we don't care what the previous layout was before
     // we want the image to be ready for presentation using the swap chain hence the final layout
-    colour_attachment.initialLayout = vk::ImageLayout::eUndefined; // VK_IMAGE_LAYOUT_UNDEFINED;
-    colour_attachment.finalLayout = vk::ImageLayout::ePresentSrcKHR; // VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    colour_attachment.initialLayout = vk::ImageLayout::eUndefined;
+    colour_attachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
 
     vk::AttachmentDescription depth_attachment{};
     depth_attachment.format = vk::Format::eD32Sfloat;
@@ -996,14 +997,14 @@ void Renderer::create_render_pass()
     // every subpass references one or more previously described attachments
     vk::AttachmentReference colour_attachment_ref{};
     colour_attachment_ref.attachment = 0; // references attachment by index
-    colour_attachment_ref.layout = vk::ImageLayout::eColorAttachmentOptimal; // VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL; // layout attachment should have during subpass
+    colour_attachment_ref.layout = vk::ImageLayout::eColorAttachmentOptimal; // layout attachment should have during subpass
 
     vk::AttachmentReference depth_attachment_ref{};
     depth_attachment_ref.attachment = 1;
     depth_attachment_ref.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 
     vk::SubpassDescription subpass{};
-    subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics; // VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colour_attachment_ref;
     subpass.pDepthStencilAttachment = &depth_attachment_ref;
@@ -1017,12 +1018,12 @@ void Renderer::create_render_pass()
 
     dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests;
     dependency.srcAccessMask = vk::AccessFlagBits::eNone;
-    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests; // VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests;
     dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
 
     std::array<vk::AttachmentDescription, 2> attachments = {colour_attachment, depth_attachment};
     vk::RenderPassCreateInfo render_pass_info{};
-    render_pass_info.sType = vk::StructureType::eRenderPassCreateInfo; // VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    render_pass_info.sType = vk::StructureType::eRenderPassCreateInfo;
     render_pass_info.attachmentCount = static_cast<unsigned>(attachments.size());
     render_pass_info.pAttachments = attachments.data();
     render_pass_info.subpassCount = 1;

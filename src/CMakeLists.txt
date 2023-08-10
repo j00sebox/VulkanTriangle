@@ -20,4 +20,6 @@ list(APPEND SOURCE_FILES
         ${CMAKE_CURRENT_LIST_DIR}/ModelLoader.hpp
         ${CMAKE_CURRENT_LIST_DIR}/Primitives.hpp
         ${CMAKE_CURRENT_LIST_DIR}/Primitives.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/Timer.hpp
+        ${CMAKE_CURRENT_LIST_DIR}/Timer.cpp
 )

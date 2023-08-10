@@ -20,13 +20,6 @@ struct CameraData
     glm::vec3 camera_position;
 };
 
-struct LightingData
-{
-    glm::vec4 ambient_colour;
-    glm::vec4 direct_light_colour;
-    glm::vec3 direct_light_position;
-};
-
 Renderer::Renderer(GLFWwindow* window) :
     m_window(window),
     m_buffer_pool(&m_pool_allocator, 10, sizeof(Buffer)),
@@ -55,6 +48,12 @@ Renderer::Renderer(GLFWwindow* window) :
     });
 
     init_imgui();
+
+    configure_lighting({
+        .ambient_colour = {0.2f, 0.2f, 0.2f, 1.f},
+        .direct_light_colour = {1.f, 1.f, 1.f, 1.f},
+        .direct_light_position = {0.f, 1.f, 0.f}
+    });
 }
 
 Renderer::~Renderer()
@@ -106,6 +105,15 @@ Renderer::~Renderer()
     m_instance.destroy();
 }
 
+void Renderer::configure_lighting(LightingData data)
+{
+    m_light_data = data;
+    for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    {
+        memcpy(m_light_buffers_mapped[i], &m_light_data, pad_uniform_buffer(sizeof(m_light_data)));
+    }
+}
+
 void Renderer::render(Scene* scene)
 {
     CameraData camera_data{};
@@ -120,13 +128,6 @@ void Renderer::render(Scene* scene)
     // this is the most efficient way to pass constantly changing values to the shader
     // another way to handle smaller data is to use push constants
     memcpy(m_camera_buffers_mapped[m_current_frame], &camera_data, pad_uniform_buffer(sizeof(camera_data)));
-
-    LightingData light_data{};
-    light_data.ambient_colour = {0.2f, 0.2f, 0.2f, 1.f};
-    light_data.direct_light_colour = {1.f, 1.f, 1.f, 1.f};
-    light_data.direct_light_position = {0.f, 1.f, 0.f};
-
-    memcpy(m_light_buffers_mapped[m_current_frame], &light_data, pad_uniform_buffer(sizeof(light_data)));
 
     begin_frame();
     for(const Model& model : scene->models)

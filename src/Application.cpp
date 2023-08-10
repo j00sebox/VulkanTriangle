@@ -4,8 +4,19 @@
 #include "Timer.hpp"
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_vulkan.h>
+
+// TODO: move
+void coloured_label(const char* label, ImVec4 colour, ImVec2 size)
+{
+    ImGui::PushStyleColor(ImGuiCol_Button, colour);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colour);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colour);
+    ImGui::Button(label, size);
+    ImGui::PopStyleColor(3);
+}
 
 Application::Application(int width, int height)
 {
@@ -72,12 +83,80 @@ void Application::run()
 
         ImGui::NewFrame();
 
-        //imgui commands
-        //ImGui::ShowDemoWindow();
+        // imgui commands
+        // ImGui::ShowDemoWindow();
         ImGui::Begin("Settings");
-        ImGui::Text("Diagnostics"); ImGui::Text("\n");
-        ImGui::Text("Avg. %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-        ImGui::Text("Render: %.1fms", render_time);
+        if (ImGui::CollapsingHeader("Diagnostics"))
+        {
+            ImGui::Text("Avg. %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+            ImGui::Text("Render: %.1fms", render_time);
+        }
+
+        if (ImGui::CollapsingHeader("Lighting"))
+        {
+            bool update_data = false;
+
+            LightingData data = m_engine->get_light_data();
+
+            glm::vec4 ambient_colour = data.ambient_colour;
+            float colour1[4] = {
+                ambient_colour.x,
+                ambient_colour.y,
+                ambient_colour.z,
+                ambient_colour.w
+            };
+
+            if(ImGui::ColorEdit4("Ambient Colour", colour1))
+            {
+                ambient_colour.x = colour1[0];
+                ambient_colour.y = colour1[1];
+                ambient_colour.z = colour1[2];
+                ambient_colour.w = colour1[3];
+
+                update_data = true;
+            }
+
+            glm::vec4 direct_light_colour = data.direct_light_colour;
+            float colour2[4] = {
+                    direct_light_colour.x,
+                    direct_light_colour.y,
+                    direct_light_colour.z,
+                    direct_light_colour.w
+            };
+
+            if(ImGui::ColorEdit4("Direct Light Colour", colour2))
+            {
+                direct_light_colour.x = colour2[0];
+                direct_light_colour.y = colour2[1];
+                direct_light_colour.z = colour2[2];
+                direct_light_colour.w = colour2[3];
+
+                update_data = true;
+            }
+
+            float line_height = GImGui->Font->FontSize + GImGui->Style.FramePadding.y * 2.0f;
+            ImVec2 button_size = { line_height + 3.0f, line_height };
+
+            ImGui::Text("\nDirect Light Position: ");
+            coloured_label("x", ImVec4{ 0.8f, 0.1f, 0.15f, 1.0f }, button_size);
+            ImGui::SameLine();
+            update_data |= ImGui::DragFloat("##x", &data.direct_light_position.x);
+            coloured_label("y", ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f }, button_size);
+            ImGui::SameLine();
+            update_data |= ImGui::DragFloat("##y", &data.direct_light_position.y);
+            coloured_label("z", ImVec4{ 0.1f, 0.25f, 0.8f, 1.0f }, button_size);
+            ImGui::SameLine();
+            update_data |= ImGui::DragFloat("##z", &data.direct_light_position.z);
+
+            if(update_data)
+            {
+                m_engine->configure_lighting({
+                    .ambient_colour = ambient_colour,
+                    .direct_light_colour = direct_light_colour,
+                    .direct_light_position = data.direct_light_position
+                });
+            }
+        }
         ImGui::End();
         ImGui::Render();
 

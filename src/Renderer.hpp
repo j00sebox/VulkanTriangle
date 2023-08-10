@@ -106,6 +106,9 @@ private:
     std::vector<u32> m_camera_buffers;
     std::vector<void*> m_camera_buffers_mapped;
 
+    std::vector<u32> m_light_buffers;
+    std::vector<void*> m_light_buffers_mapped;
+
     // texture used when loader can't find one
     u32 m_null_texture;
 

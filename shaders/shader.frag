@@ -13,9 +13,12 @@ layout(location = 3) in vec3 camera_position;
 
 layout(location = 0) out vec4 out_colour;
 
-// TODO: move to uniform buffer
-vec3 light_postion = vec3(0.0, 1.0, 0.0);
-vec4 light_colour = vec4(1.0, 1.0, 1.0, 1.0);
+layout(set=0, binding=1) uniform LightDataBuffer
+{
+    vec4 ambient_colour;
+    vec4 direct_light_colour;
+    vec3 direct_light_position;
+} light_data;
 
 bool is_texture_valid(sampler2D texture)
 {
@@ -46,13 +49,13 @@ void main()
         normal = v_normal;
     }
 
-    vec3 l = normalize(light_postion - v_position); // light direction
+    vec3 l = normalize(light_data.direct_light_position - v_position); // light direction
     vec3 v = normalize(camera_position - v_position); // view direction
     vec3 h = normalize(l + v); // halfway vector
 
     float shininess = 0.5;
     specular_factor = pow(max(dot(normal, h), 0.0), shininess);
-    vec3 specular = vec3(light_colour * specular_factor);
+    vec3 specular = vec3(light_data.direct_light_colour * specular_factor);
 
-    out_colour = diffuse_colour + vec4(specular, 1.0);
+    out_colour = diffuse_colour * light_data.ambient_colour + vec4(specular, 1.0);
 }

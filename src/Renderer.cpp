@@ -21,7 +21,11 @@ struct CameraData
 };
 
 struct LightingData
-{};
+{
+    glm::vec4 ambient_colour;
+    glm::vec4 direct_light_colour;
+    glm::vec3 direct_light_position;
+};
 
 Renderer::Renderer(GLFWwindow* window) :
     m_window(window),
@@ -69,6 +73,10 @@ Renderer::~Renderer()
         auto* buffer = static_cast<Buffer*>(m_buffer_pool.access(m_camera_buffers[i]));
         vmaUnmapMemory(m_allocator, buffer->vma_allocation);
         destroy_buffer(m_camera_buffers[i]);
+
+        buffer = static_cast<Buffer*>(m_buffer_pool.access(m_light_buffers[i]));
+        vmaUnmapMemory(m_allocator, buffer->vma_allocation);
+        destroy_buffer(m_light_buffers[i]);
     }
 
     destroy_texture(m_null_texture);
@@ -112,6 +120,13 @@ void Renderer::render(Scene* scene)
     // this is the most efficient way to pass constantly changing values to the shader
     // another way to handle smaller data is to use push constants
     memcpy(m_camera_buffers_mapped[m_current_frame], &camera_data, pad_uniform_buffer(sizeof(camera_data)));
+
+    LightingData light_data{};
+    light_data.ambient_colour = {0.2f, 0.2f, 0.2f, 1.f};
+    light_data.direct_light_colour = {1.f, 1.f, 1.f, 1.f};
+    light_data.direct_light_position = {0.f, 1.f, 0.f};
+
+    memcpy(m_light_buffers_mapped[m_current_frame], &light_data, pad_uniform_buffer(sizeof(light_data)));
 
     begin_frame();
     for(const Model& model : scene->models)
@@ -1030,12 +1045,21 @@ void Renderer::init_descriptor_sets()
     camera_data_layout_binding.stageFlags = vk::ShaderStageFlagBits::eVertex;
     camera_data_layout_binding.pImmutableSamplers = nullptr; // only relevant for image sampling descriptors
 
-    vk::DescriptorSetLayoutCreateInfo camera_layout_info{};
-    camera_layout_info.sType = vk::StructureType::eDescriptorSetLayoutCreateInfo;
-    camera_layout_info.bindingCount = 1;
-    camera_layout_info.pBindings = &camera_data_layout_binding;
+    vk::DescriptorSetLayoutBinding lighting_data_layout_binding{};
+    lighting_data_layout_binding.binding = 1;
+    lighting_data_layout_binding.descriptorType = vk::DescriptorType::eUniformBuffer;
+    lighting_data_layout_binding.descriptorCount = 1;
+    lighting_data_layout_binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+    lighting_data_layout_binding.pImmutableSamplers = nullptr;
 
-    if(m_logical_device.createDescriptorSetLayout(&camera_layout_info, nullptr, &m_camera_data_layout) != vk::Result::eSuccess)
+    vk::DescriptorSetLayoutBinding bindings[] = { camera_data_layout_binding, lighting_data_layout_binding };
+
+    vk::DescriptorSetLayoutCreateInfo uniform_layout_info{};
+    uniform_layout_info.sType = vk::StructureType::eDescriptorSetLayoutCreateInfo;
+    uniform_layout_info.bindingCount = 2;
+    uniform_layout_info.pBindings = bindings;
+
+    if(m_logical_device.createDescriptorSetLayout(&uniform_layout_info, nullptr, &m_camera_data_layout) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create descriptor set layout!");
     }
@@ -1066,21 +1090,33 @@ void Renderer::init_descriptor_sets()
     }
 
     // create the buffers for the view/projection transforms
-    u32 buffer_size = pad_uniform_buffer(sizeof(CameraData));
+    u32 camera_buffer_size = pad_uniform_buffer(sizeof(CameraData));
+    u32 light_buffer_size = pad_uniform_buffer(sizeof(LightingData));
 
     m_camera_buffers.resize(MAX_FRAMES_IN_FLIGHT);
     m_camera_buffers_mapped.resize(MAX_FRAMES_IN_FLIGHT);
+
+    m_light_buffers.resize(MAX_FRAMES_IN_FLIGHT);
+    m_light_buffers_mapped.resize(MAX_FRAMES_IN_FLIGHT);
 
     // TODO: combine into one big buffer
     for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         m_camera_buffers[i] = create_buffer({
             .usage = vk::BufferUsageFlagBits::eUniformBuffer,
-            .size = buffer_size
+            .size = camera_buffer_size
         });
 
         auto* buffer = static_cast<Buffer*>(m_buffer_pool.access(m_camera_buffers[i]));
         vmaMapMemory(m_allocator, buffer->vma_allocation, &m_camera_buffers_mapped[i]);
+
+        m_light_buffers[i] = create_buffer({
+            .usage = vk::BufferUsageFlagBits::eUniformBuffer,
+            .size = light_buffer_size
+        });
+
+        buffer = static_cast<Buffer*>(m_buffer_pool.access(m_light_buffers[i]));
+        vmaMapMemory(m_allocator, buffer->vma_allocation, &m_light_buffers_mapped[i]);
     }
 
     m_camera_sets.resize(MAX_FRAMES_IN_FLIGHT);
@@ -1089,11 +1125,11 @@ void Renderer::init_descriptor_sets()
     for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         m_camera_sets[i] = create_descriptor_set({
-           .resource_handles = {m_camera_buffers[i]},
-           .bindings = {0},
-           .types = {vk::DescriptorType::eUniformBuffer},
+           .resource_handles = {m_camera_buffers[i], m_light_buffers[i]},
+           .bindings = {0, 1},
+           .types = {vk::DescriptorType::eUniformBuffer, vk::DescriptorType::eUniformBuffer},
            .layout = m_camera_data_layout,
-           .num_resources = 1,
+           .num_resources = 2,
         });
     }
 }

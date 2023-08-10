@@ -20,6 +20,9 @@ struct CameraData
     glm::vec3 camera_position;
 };
 
+struct LightingData
+{};
+
 Renderer::Renderer(GLFWwindow* window) :
     m_window(window),
     m_buffer_pool(&m_pool_allocator, 10, sizeof(Buffer)),
@@ -719,10 +722,10 @@ u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_
             {
                 auto* buffer = static_cast<Buffer*>(m_buffer_pool.access(descriptor_set_creation.resource_handles[i]));
 
-                vk::DescriptorBufferInfo buffer_info{};
-                buffer_info.buffer = buffer->vk_buffer;
-                buffer_info.offset = 0;
-                buffer_info.range = buffer->size;
+                vk::DescriptorBufferInfo descriptor_info{};
+                descriptor_info.buffer = buffer->vk_buffer;
+                descriptor_info.offset = 0;
+                descriptor_info.range = buffer->size;
 
                 descriptor_writes[i].sType = vk::StructureType::eWriteDescriptorSet;
                 descriptor_writes[i].dstSet = descriptor_set->vk_descriptor_set;
@@ -732,17 +735,20 @@ u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_
                 descriptor_writes[i].descriptorType = vk::DescriptorType::eUniformBuffer;
                 descriptor_writes[i].descriptorCount = 1; // how many array elements to update
 
-                descriptor_writes[i].pBufferInfo = &buffer_info;
+                descriptor_writes[i].pBufferInfo = &descriptor_info;
 
                 // used for descriptors that reference image data
                 descriptor_writes[i].pImageInfo = nullptr;
                 descriptor_writes[i].pTexelBufferView = nullptr;
+
+                m_logical_device.updateDescriptorSets(1, &descriptor_writes[i], 0, nullptr);
+
                break;
             }
             case vk::DescriptorType::eCombinedImageSampler:
             {
                 auto* texture = static_cast<Texture*>(m_texture_pool.access(descriptor_set_creation.resource_handles[i]));
-                auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(descriptor_set_creation.resource_handles[i]));
+                auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(descriptor_set_creation.sampler_handles[i]));
 
                 vk::DescriptorImageInfo descriptor_info{};
                 descriptor_info.imageView = texture->vk_image_view;
@@ -757,12 +763,14 @@ u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_
                 descriptor_writes[i].descriptorCount = 1; // how many array elements to update
                 descriptor_writes[i].pImageInfo = &descriptor_info;
 
+                m_logical_device.updateDescriptorSets(1, &descriptor_writes[i], 0, nullptr);
+
                 break;
             }
         }
     }
 
-    m_logical_device.updateDescriptorSets(descriptor_set_creation.num_resources, descriptor_writes, 0, nullptr);
+    // m_logical_device.updateDescriptorSets(descriptor_set_creation.num_resources, descriptor_writes, 0, nullptr);
 
     return descriptor_set_handle;
 }
@@ -1032,8 +1040,10 @@ void Renderer::init_descriptor_sets()
         throw std::runtime_error("failed to create descriptor set layout!");
     }
 
-    vk::DescriptorSetLayoutBinding texture_set_layout_bindings[4];
-    for(int i = 0; i < 4; ++i)
+    i32 texture_count = 4;
+
+    vk::DescriptorSetLayoutBinding texture_set_layout_bindings[texture_count];
+    for(int i = 0; i < texture_count; ++i)
     {
         vk::DescriptorSetLayoutBinding textured_layout_binding{};
         textured_layout_binding.binding = i;
@@ -1047,7 +1057,7 @@ void Renderer::init_descriptor_sets()
 
     vk::DescriptorSetLayoutCreateInfo textured_layout_info{};
     textured_layout_info.sType = vk::StructureType::eDescriptorSetLayoutCreateInfo;
-    textured_layout_info.bindingCount = 4;
+    textured_layout_info.bindingCount = texture_count;
     textured_layout_info.pBindings = texture_set_layout_bindings;
 
     if(m_logical_device.createDescriptorSetLayout(&textured_layout_info, nullptr, &m_textured_set_layout) != vk::Result::eSuccess)

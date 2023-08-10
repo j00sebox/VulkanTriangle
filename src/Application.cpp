@@ -86,7 +86,8 @@ void Application::load_model(const char* file_name, const char* texture)
     loader.load_mesh(mesh);
 
     Material material{};
-    loader.load_material(material);
+    ModelLoader::load_texture(m_engine, texture, material);
+    // loader.load_material(material);
 
     // TODO: remove later
     glm::mat4 transform = glm::translate(glm::mat4(1.f), {0.f, 0.f, -2.f});

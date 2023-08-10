@@ -1531,7 +1531,10 @@ void Renderer::init_imgui()
     pool_info.poolSizeCount = std::size(pool_sizes);
     pool_info.pPoolSizes = pool_sizes;
 
-    assert(m_logical_device.createDescriptorPool(&pool_info, nullptr, &m_imgui_pool) == vk::Result::eSuccess);
+    if(m_logical_device.createDescriptorPool(&pool_info, nullptr, &m_imgui_pool) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("Failed to create imgui descriptor pool!");
+    }
 
     ImGui::CreateContext();
 
@@ -1683,7 +1686,10 @@ vk::CommandBuffer Renderer::begin_single_time_commands()
     alloc_info.commandBufferCount = 1;
 
     vk::CommandBuffer command_buffer;
-    vk::Result res = m_logical_device.allocateCommandBuffers(&alloc_info, &command_buffer);
+    if(m_logical_device.allocateCommandBuffers(&alloc_info, &command_buffer) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("Failed to allocate command buffer for single time use!");
+    }
 
     // only using the command buffer once and wait with until the copy is finished
     // its good practice to tell the driver about intend, hence one time submit flag
@@ -1691,7 +1697,10 @@ vk::CommandBuffer Renderer::begin_single_time_commands()
     begin_info.sType = vk::StructureType::eCommandBufferBeginInfo;
     begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
 
-    res = command_buffer.begin(&begin_info);
+    if(command_buffer.begin(&begin_info) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("Failed to begin command buffer!");
+    }
 
     return command_buffer;
 }
@@ -1705,7 +1714,10 @@ void Renderer::end_single_time_commands(vk::CommandBuffer command_buffer)
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &command_buffer;
 
-    vk::Result res = m_graphics_queue.submit(1, &submit_info, nullptr);
+    if(m_graphics_queue.submit(1, &submit_info, nullptr) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("Failed to submit to graphics queue!");
+    }
     m_graphics_queue.waitIdle();
 
     m_logical_device.freeCommandBuffers(m_command_pool, 1, & command_buffer);
@@ -1715,11 +1727,17 @@ bool Renderer::check_validation_layer_support()
 {
     uint32_t layer_count;
 
-    vk::Result result = vk::enumerateInstanceLayerProperties(&layer_count, nullptr);
+    if(vk::enumerateInstanceLayerProperties(&layer_count, nullptr) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("Failed to enumerate instance properties!");
+    }
 
     std::vector<vk::LayerProperties> available_layers(layer_count);
 
-    result = vk::enumerateInstanceLayerProperties(&layer_count, available_layers.data());
+    if(vk::enumerateInstanceLayerProperties(&layer_count, available_layers.data()) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("Failed to enumerate instance properties!");
+    }
 
     for(const char* layer_name : m_validation_layers)
     {

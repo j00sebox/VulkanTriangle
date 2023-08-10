@@ -9,9 +9,15 @@ layout(set = 1, binding = 3) uniform sampler2D occlusion_sampler;
 layout(location = 0) in vec3 v_position;
 layout(location = 1) in vec3 v_normal;
 layout(location = 2) in vec2 v_tex_coord;
-layout(location = 3) in vec3 camera_position;
 
 layout(location = 0) out vec4 out_colour;
+
+layout(set=0, binding=0) uniform CameraDataBuffer
+{
+    mat4 view;
+    mat4 proj;
+    vec3 camera_position;
+} camera_data;
 
 layout(set=0, binding=1) uniform LightDataBuffer
 {
@@ -50,7 +56,7 @@ void main()
     }
 
     vec3 l = normalize(light_data.direct_light_position - v_position); // light direction
-    vec3 v = normalize(camera_position - v_position); // view direction
+    vec3 v = normalize(camera_data.camera_position - v_position); // view direction
     vec3 h = normalize(l + v); // halfway vector
 
     float shininess = 0.5;

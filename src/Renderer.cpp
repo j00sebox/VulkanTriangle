@@ -1043,7 +1043,7 @@ void Renderer::init_descriptor_sets()
     camera_data_layout_binding.binding = 0; // binding in the shader
     camera_data_layout_binding.descriptorType = vk::DescriptorType::eUniformBuffer;
     camera_data_layout_binding.descriptorCount = 1;
-    camera_data_layout_binding.stageFlags = vk::ShaderStageFlagBits::eVertex;
+    camera_data_layout_binding.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
     camera_data_layout_binding.pImmutableSamplers = nullptr; // only relevant for image sampling descriptors
 
     vk::DescriptorSetLayoutBinding lighting_data_layout_binding{};

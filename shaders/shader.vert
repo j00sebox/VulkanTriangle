@@ -7,7 +7,6 @@ layout(location = 2) in vec2 in_uv;
 layout(location = 0) out vec3 v_position;
 layout(location = 1) out vec3 v_normal;
 layout(location = 2) out vec2 v_tex_coord;
-layout(location = 3) out vec3 camera_position;
 
 layout(push_constant) uniform constants
 {
@@ -28,6 +27,4 @@ void main()
     v_position = vec3(world_pos);
     v_normal = transpose(inverse(mat3(object_transform.model))) * in_normal;
     v_tex_coord = in_uv;
-
-    camera_position = camera_data.camera_position; // FIXME ?
 }

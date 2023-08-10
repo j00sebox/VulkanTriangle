@@ -1531,7 +1531,7 @@ void Renderer::init_imgui()
     pool_info.poolSizeCount = std::size(pool_sizes);
     pool_info.pPoolSizes = pool_sizes;
 
-    m_logical_device.createDescriptorPool(&pool_info, nullptr, &m_imgui_pool);
+    assert(m_logical_device.createDescriptorPool(&pool_info, nullptr, &m_imgui_pool) == vk::Result::eSuccess);
 
     ImGui::CreateContext();
 
@@ -1667,7 +1667,7 @@ void Renderer::transition_image_layout(vk::Image image, vk::Format format, vk::I
     end_single_time_commands(command_buffer);
 }
 
-size_t Renderer::pad_uniform_buffer(size_t original_size)
+size_t Renderer::pad_uniform_buffer(size_t original_size) const
 {
     size_t alignment = m_device_properties.limits.minUniformBufferOffsetAlignment;
     size_t aligned_size = (alignment + original_size - 1) & ~(alignment - 1);

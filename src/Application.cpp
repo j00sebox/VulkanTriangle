@@ -9,6 +9,7 @@
 
 Application::Application(int width, int height)
 {
+    Timer timer;
     glfwInit();
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -23,6 +24,8 @@ Application::Application(int width, int height)
     Input::m_window_handle = m_window;
     m_scene->camera.resize(width, height);
     m_engine = new Renderer(m_window);
+
+    std::cout << "Startup time: " << timer.stop() << "ms\n";
 }
 
 Application::~Application()
@@ -89,14 +92,14 @@ void Application::run()
 
 void Application::load_model(const char* file_name, const char* texture)
 {
+    Timer timer;
     ModelLoader loader(m_engine, file_name);
 
     Mesh mesh{};
     loader.load_mesh(mesh);
 
     Material material{};
-    ModelLoader::load_texture(m_engine, texture, material);
-    // loader.load_material(material);
+    loader.load_material(material);
 
     // TODO: remove later
     glm::mat4 transform = glm::translate(glm::mat4(1.f), {0.f, 0.f, -2.f});
@@ -104,6 +107,7 @@ void Application::load_model(const char* file_name, const char* texture)
     transform = glm::scale(transform, {5.f, 5.f, 5.f});
 
     m_scene->add_model({ .mesh = mesh, .material = material, .transform = transform });
+    std::cout << "Model loaded in " << timer.stop() << "ms\n";
 }
 
 void Application::load_primitive(const char* primitive_name)

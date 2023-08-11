@@ -22,7 +22,7 @@ struct CameraData
 
 Renderer::Renderer(GLFWwindow* window) :
     m_window(window),
-    m_buffer_pool(&m_pool_allocator, 10, sizeof(Buffer)),
+    m_buffer_pool(&m_pool_allocator, 100, sizeof(Buffer)),
     m_texture_pool(&m_pool_allocator, 10, sizeof(Texture)),
     m_sampler_pool(&m_pool_allocator, 10, sizeof(Sampler)),
     m_descriptor_set_pool(&m_pool_allocator, 10, sizeof(DescriptorSet))
@@ -603,8 +603,11 @@ u32 Renderer::create_texture(const TextureCreationInfo& texture_creation)
     u32 handle = m_texture_pool.acquire();
     auto* texture = static_cast<Texture*>(m_texture_pool.access(handle));
 
+    stbi_set_flip_vertically_on_load(1);
+
     int width, height, channels;
     stbi_uc* pixels = stbi_load(texture_creation.image_src, &width, &height, &channels, STBI_rgb_alpha);
+
 
     vk::DeviceSize image_size = width * height * 4;
 

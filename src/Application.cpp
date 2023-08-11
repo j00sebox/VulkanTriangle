@@ -169,6 +169,42 @@ void Application::run()
     m_engine->wait_for_device_idle();
 }
 
+void Application::load_scene(const std::vector<std::string>& scene)
+{
+    ModelParams params{};
+    for(int i = 0; i < scene.size(); i += 4)
+    {
+        params.path = scene[i].c_str();
+
+        std::vector<float> position_values = get_floats_from_string(scene[i + 1]);
+        params.transform = glm::translate(glm::mat4(1.f), {position_values[0], position_values[1], position_values[2]});
+
+        std::vector<float> rotation_values = get_floats_from_string(scene[i + 2]);
+        params.transform = glm::rotate(params.transform, glm::radians(rotation_values[0]), {rotation_values[1], rotation_values[2], rotation_values[3]});
+
+        std::vector<float> scale_values = get_floats_from_string(scene[i + 3]);
+        params.transform = glm::scale(params.transform, {scale_values[0], scale_values[1], scale_values[2]});
+
+        load_model(params);
+        params = {};
+    }
+}
+
+void Application::load_model(ModelParams params)
+{
+    Timer timer;
+    ModelLoader loader(m_engine, params.path);
+
+    Mesh mesh{};
+    loader.load_mesh(mesh);
+
+    Material material{};
+    loader.load_material(material);
+
+    m_scene->add_model({ .mesh = mesh, .material = material, .transform = params.transform });
+    std::cout << "Model loaded in " << timer.stop() << "ms\n";
+}
+
 void Application::load_model(const char* file_name, const char* texture)
 {
     Timer timer;
@@ -207,4 +243,21 @@ float Application::get_delta_time()
     m_prev_time = (float)time;
 
     return delta_time;
+}
+
+std::vector<float> Application::get_floats_from_string(std::string line)
+{
+    size_t location;
+    std::string token;
+    std::vector<float> values;
+    while ((location = line.find(" ")) != std::string::npos)
+    {
+        token = line.substr(0, location);
+        values.push_back(stof(token));
+        line.erase(0, location + 1);
+    }
+
+    values.push_back(stof(line));
+
+    return values;
 }

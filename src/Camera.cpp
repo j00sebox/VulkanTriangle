@@ -7,7 +7,7 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtx/rotate_vector.hpp>
 #include <glm/gtx/vector_angle.hpp>
-// #include <imgui.h>
+#include <imgui.h>
 
 glm::mat4 Camera::camera_look_at()
 {
@@ -35,7 +35,7 @@ void Camera::resize(int width, int height)
 bool Camera::update(float elapsed_time)
 {
 	// block camera update if imgui menu is in use
-	//if (!ImGui::IsAnyItemHovered() && !ImGui::IsAnyItemActive())
+	if (!ImGui::IsAnyItemHovered() && !ImGui::IsAnyItemActive())
 	{
 		if (Input::is_key_pressed(GLFW_KEY_W))
 		{

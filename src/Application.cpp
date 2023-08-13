@@ -98,38 +98,18 @@ void Application::run()
 
             LightingData data = m_engine->get_light_data();
 
-            glm::vec4 ambient_colour = data.ambient_colour;
-            float colour1[4] = {
-                ambient_colour.x,
-                ambient_colour.y,
-                ambient_colour.z,
-                ambient_colour.w
-            };
-
-            if(ImGui::ColorEdit4("Ambient Colour", colour1))
-            {
-                ambient_colour.x = colour1[0];
-                ambient_colour.y = colour1[1];
-                ambient_colour.z = colour1[2];
-                ambient_colour.w = colour1[3];
-
-                update_data = true;
-            }
-
-            glm::vec4 direct_light_colour = data.direct_light_colour;
-            float colour2[4] = {
+            glm::vec3 direct_light_colour = data.direct_light_colour;
+            float colour2[3] = {
                     direct_light_colour.x,
                     direct_light_colour.y,
-                    direct_light_colour.z,
-                    direct_light_colour.w
+                    direct_light_colour.z
             };
 
-            if(ImGui::ColorEdit4("Direct Light Colour", colour2))
+            if(ImGui::ColorEdit3("Direct Light Colour", colour2))
             {
                 direct_light_colour.x = colour2[0];
                 direct_light_colour.y = colour2[1];
                 direct_light_colour.z = colour2[2];
-                direct_light_colour.w = colour2[3];
 
                 update_data = true;
             }
@@ -151,7 +131,6 @@ void Application::run()
             if(update_data)
             {
                 m_engine->configure_lighting({
-                    .ambient_colour = ambient_colour,
                     .direct_light_colour = direct_light_colour,
                     .direct_light_position = data.direct_light_position
                 });

@@ -50,8 +50,7 @@ Renderer::Renderer(GLFWwindow* window) :
     init_imgui();
 
     configure_lighting({
-        .ambient_colour = {0.2f, 0.2f, 0.2f, 1.f},
-        .direct_light_colour = {1.f, 1.f, 1.f, 1.f},
+        .direct_light_colour = {1.f, 1.f, 1.f},
         .direct_light_position = {0.f, 1.f, 0.f}
     });
 }
@@ -117,9 +116,9 @@ void Renderer::configure_lighting(LightingData data)
 void Renderer::render(Scene* scene)
 {
     CameraData camera_data{};
-    camera_data.camera_position = scene->camera.get_pos();
     camera_data.view = scene->camera.camera_look_at();
     camera_data.proj = scene->camera.get_perspective();
+    camera_data.camera_position = scene->camera.get_pos();
 
     // GLM was originally designed for OpenGL where the Y coordinate of the clip space is inverted,
     // so we can remedy this by flipping the sign of the Y scaling factor in the projection matrix
@@ -151,11 +150,10 @@ void Renderer::render(Scene* scene)
         m_command_buffers[m_current_frame].bindIndexBuffer(index_buffer->vk_buffer, 0, vk::IndexType::eUint32);
 
         // now we can issue the actual draw command
-        // vertex count
+        // index count
         // instance count
         // first index: offset into the vertex buffer
         // first instance
-        // vkCmdDraw(command_buffer, static_cast<unsigned>(g_vertices.size()), 1, 0, 0);
         m_command_buffers[m_current_frame].drawIndexed(model.mesh.index_count, 1, 0, 0, 0);
     }
 

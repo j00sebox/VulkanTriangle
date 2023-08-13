@@ -21,8 +21,7 @@ layout(set=0, binding=0) uniform CameraDataBuffer
 
 layout(set=0, binding=1) uniform LightDataBuffer
 {
-    vec4 ambient_colour;
-    vec4 direct_light_colour;
+    vec3 direct_light_colour;
     vec3 direct_light_position;
 } light_data;
 
@@ -33,17 +32,17 @@ bool is_texture_valid(sampler2D texture)
 
 void main()
 {
-    vec4 diffuse_colour;
+    vec3 base_colour;
     float specular_factor;
     vec3 normal;
 
     if(is_texture_valid(diffuse_sampler))
     {
-        diffuse_colour = texture(diffuse_sampler, v_tex_coord);
+        base_colour = texture(diffuse_sampler, v_tex_coord).rgb;
     }
     else
     {
-        diffuse_colour = vec4(1.0, 0.0, 0.0, 1.0);
+        base_colour = vec3(1.0, 0.0, 0.0);
     }
 
     if(is_texture_valid(normal_sampler))
@@ -55,13 +54,19 @@ void main()
         normal = v_normal;
     }
 
+    vec3 ambient = 0.05 * light_data.direct_light_colour;
+
     vec3 l = normalize(light_data.direct_light_position - v_position); // light direction
     vec3 v = normalize(camera_data.camera_position - v_position); // view direction
     vec3 h = normalize(l + v); // halfway vector
 
-    float shininess = 0.5;
-    specular_factor = pow(max(dot(normal, h), 0.0), shininess);
-    vec3 specular = vec3(light_data.direct_light_colour * specular_factor);
+    vec3 diffuse = max(dot(normal, l), 0.0) * light_data.direct_light_colour;
 
-    out_colour = diffuse_colour * light_data.ambient_colour + vec4(specular, 1.0);
+    float shininess = 32.0;
+    float strength = 0.2;
+    specular_factor = pow(max(dot(normal, h), 0.0), shininess);
+    vec3 specular = light_data.direct_light_colour * specular_factor * strength;
+
+    vec3 result = (diffuse + ambient + specular) * base_colour;
+    out_colour = vec4(result, 1.0);
 }

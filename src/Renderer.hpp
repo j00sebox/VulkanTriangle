@@ -11,8 +11,7 @@
 
 struct LightingData
 {
-    glm::vec4 ambient_colour;
-    glm::vec4 direct_light_colour;
+    glm::vec3 direct_light_colour;
     glm::vec3 direct_light_position;
 };
 

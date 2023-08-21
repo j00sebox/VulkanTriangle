@@ -47,7 +47,7 @@ public:
 
     void wait_for_device_idle() { m_logical_device.waitIdle(); }
 
-    [[nodiscard]] const vk::DescriptorSetLayout& get_texture_layout() const { return m_textured_set_layout; }
+    [[nodiscard]] const vk::DescriptorSetLayout& get_texture_layout() const { return m_bindless_texture_set_layout; }
     [[nodiscard]] u32 get_null_texture_handle() const { return m_null_texture; }
 
 private:
@@ -73,7 +73,9 @@ private:
     vk::DescriptorSetLayout m_descriptor_set_layout;
     vk::DescriptorSetLayout m_camera_data_layout;
     vk::DescriptorSetLayout m_textured_set_layout;
+    vk::DescriptorSetLayout m_bindless_texture_set_layout;
     vk::DescriptorPool m_descriptor_pool;
+    vk::DescriptorPool m_descriptor_pool_bindless;
     vk::DescriptorPool m_imgui_pool;
     std::vector<vk::DescriptorSet> m_descriptor_sets;
     std::vector<u32> m_camera_sets;

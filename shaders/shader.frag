@@ -1,10 +1,18 @@
 #version 450
+#extension GL_EXT_nonuniform_qualifier : enable
 
 /*----------Textures----------*/
 layout(set = 1, binding = 0) uniform sampler2D diffuse_sampler;
 layout(set = 1, binding = 1) uniform sampler2D specular_sampler;
 layout(set = 1, binding = 2) uniform sampler2D normal_sampler;
 layout(set = 1, binding = 3) uniform sampler2D occlusion_sampler;
+
+layout(set = 2, binding = 10) uniform sampler2D textures[];
+
+layout(push_constant) uniform texture_stuff
+{
+    layout(offset = 64) uvec4 indices;
+} texture_info;
 
 layout(location = 0) in vec3 v_position;
 layout(location = 1) in vec3 v_normal;
@@ -36,23 +44,25 @@ void main()
     float specular_factor;
     vec3 normal;
 
-    if(is_texture_valid(diffuse_sampler))
+    if(is_texture_valid(textures[nonuniformEXT(texture_info.indices.x)]))
     {
-        base_colour = texture(diffuse_sampler, v_tex_coord).rgb;
+        base_colour = texture(textures[nonuniformEXT(texture_info.indices.x)], v_tex_coord).rgb;
     }
     else
     {
         base_colour = vec3(1.0, 0.0, 0.0);
     }
 
-    if(is_texture_valid(normal_sampler))
-    {
-        normal = vec3(texture(normal_sampler, v_tex_coord));
-    }
-    else
-    {
-        normal = v_normal;
-    }
+//    if(is_texture_valid(textures[2]))
+//    {
+//        normal = vec3(texture(textures[2], v_tex_coord));
+//    }
+//    else
+//    {
+//        normal = v_normal;
+//    }
+
+    normal = v_normal;
 
     vec3 ambient = 0.05 * light_data.direct_light_colour;
 

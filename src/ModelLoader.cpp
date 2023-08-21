@@ -119,7 +119,7 @@ void ModelLoader::load_material(Material& material)
     material.descriptor_set = m_renderer->create_descriptor_set({
         .resource_handles = { material.textures[0], material.textures[1], material.textures[2], material.textures[3] },
         .sampler_handles = { material.sampler, material.sampler, material.sampler, material.sampler },
-        .bindings = {0, 1, 2, 3},
+        .bindings = {10, 10, 10, 10},
         .types = {vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler},
         .layout = m_renderer->get_texture_layout(),
         .num_resources = 4

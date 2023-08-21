@@ -82,9 +82,11 @@ Renderer::~Renderer()
     cleanup_swapchain();
 
     m_logical_device.destroyDescriptorPool(m_descriptor_pool, nullptr);
+    m_logical_device.destroyDescriptorPool(m_descriptor_pool_bindless, nullptr);
     m_logical_device.destroyDescriptorSetLayout(m_descriptor_set_layout, nullptr);
     m_logical_device.destroyDescriptorSetLayout(m_camera_data_layout, nullptr);
     m_logical_device.destroyDescriptorSetLayout(m_textured_set_layout, nullptr);
+    m_logical_device.destroyDescriptorSetLayout(m_bindless_texture_set_layout, nullptr);
 
     vmaDestroyAllocator(m_allocator);
 
@@ -137,9 +139,10 @@ void Renderer::render(Scene* scene)
         m_command_buffers[m_current_frame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0, 1, &camera_set->vk_descriptor_set, 0, nullptr);
 
         auto* material_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(model.material.descriptor_set));
-        m_command_buffers[m_current_frame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 1, 1, &material_set->vk_descriptor_set, 0, nullptr);
+        m_command_buffers[m_current_frame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 2, 1, &material_set->vk_descriptor_set, 0, nullptr);
 
         m_command_buffers[m_current_frame].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model.transform);
+        m_command_buffers[m_current_frame].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eFragment, 64, sizeof(glm::uvec4), model.material.textures);
 
         auto* vertex_buffer = static_cast<Buffer*>(m_buffer_pool.access(model.mesh.vertex_buffer));
         vk::Buffer vertex_buffers[] = {vertex_buffer->vk_buffer};
@@ -177,7 +180,7 @@ void Renderer::create_instance()
     app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     app_info.pEngineName = "No Engine";
     app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    app_info.apiVersion = VK_API_VERSION_1_1;
+    app_info.apiVersion = VK_API_VERSION_1_3;
 
     vk::InstanceCreateInfo create_info{};
     create_info.sType =  vk::StructureType::eInstanceCreateInfo;
@@ -244,13 +247,37 @@ void Renderer::create_surface()
 
 void Renderer::create_device()
 {
-    vk::PhysicalDeviceFeatures device_features{};
-    device_features.samplerAnisotropy = true;
+    vk::PhysicalDeviceFeatures physical_device_features{};
+    physical_device_features.samplerAnisotropy = true;
+
+    // setup for bindless resources
+//    vk::PhysicalDeviceDescriptorIndexingFeatures indexing_features{};
+//    indexing_features.sType = vk::StructureType::ePhysicalDeviceDescriptorIndexingFeatures;
+
+//    vk::PhysicalDeviceFeatures2 physical_features2{};
+//    physical_features2.sType = vk::StructureType::ePhysicalDeviceFeatures2;
+//    physical_features2.features = physical_device_features;
+
+    vk::PhysicalDeviceVulkan12Features physical_device_features12{};
+    physical_device_features12.sType = vk::StructureType::ePhysicalDeviceVulkan12Features;
+    physical_device_features12.descriptorBindingSampledImageUpdateAfterBind = true;
+    physical_device_features12.descriptorBindingStorageImageUpdateAfterBind = true;
+    physical_device_features12.descriptorBindingStorageBufferUpdateAfterBind = true;
+    physical_device_features12.descriptorIndexing = true;
+    physical_device_features12.descriptorBindingPartiallyBound = true;
+    physical_device_features12.runtimeDescriptorArray = true;
+    physical_device_features12.shaderSampledImageArrayNonUniformIndexing = true;
+
+//    m_physical_device.getFeatures2(&physical_features2);
+//    physical_features2.pNext = &indexing_features;
+
+    //physical_features12.pNext = &indexing_features;
 
     vk::DeviceCreateInfo create_info{};
-    create_info.sType = vk::StructureType::eDeviceCreateInfo; // VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    create_info.sType = vk::StructureType::eDeviceCreateInfo;
 
-    create_info.pEnabledFeatures = &device_features;
+    create_info.pEnabledFeatures = &physical_device_features;
+    create_info.pNext = &physical_device_features12;
 
     if (m_enable_validation_layers)
     {
@@ -297,6 +324,8 @@ void Renderer::create_device()
     // it is still a good idea to set them to be compatible with older versions
     create_info.enabledExtensionCount = static_cast<unsigned>(g_device_extensions.size());
     create_info.ppEnabledExtensionNames = g_device_extensions.data();
+
+
 
     // takes physical device to interface with, the queue and the usage info
     if (m_physical_device.createDevice(&create_info, nullptr, &m_logical_device) != vk::Result::eSuccess)
@@ -720,7 +749,7 @@ u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_
 
     vk::DescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType = vk::StructureType::eDescriptorSetAllocateInfo;
-    allocInfo.descriptorPool = m_descriptor_pool;
+    allocInfo.descriptorPool = m_descriptor_pool_bindless;
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &descriptor_set_creation.layout;
 
@@ -775,8 +804,8 @@ u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_
 
                 descriptor_writes[i].sType = vk::StructureType::eWriteDescriptorSet;
                 descriptor_writes[i].dstSet = descriptor_set->vk_descriptor_set; // descriptor set to update
-                descriptor_writes[i].dstBinding = descriptor_set_creation.bindings[i];
-                descriptor_writes[i].dstArrayElement = 0;
+                descriptor_writes[i].dstBinding = 10;
+                descriptor_writes[i].dstArrayElement = descriptor_set_creation.resource_handles[i];
                 descriptor_writes[i].descriptorType = vk::DescriptorType::eCombinedImageSampler;
                 descriptor_writes[i].descriptorCount = 1; // how many array elements to update
                 descriptor_writes[i].pImageInfo = &descriptor_info;
@@ -1135,6 +1164,42 @@ void Renderer::init_descriptor_sets()
            .num_resources = 2,
         });
     }
+
+    // bindless
+    // FIXME: magic numbers
+    vk::DescriptorSetLayoutBinding image_sampler_binding{};
+    image_sampler_binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    image_sampler_binding.descriptorCount = 1024; // max bindless resources
+    image_sampler_binding.binding = 10; // binding for all bindless textures (paradox)
+    image_sampler_binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+
+    vk::DescriptorSetLayoutBinding storage_image_binding{};
+    storage_image_binding.descriptorType = vk::DescriptorType::eStorageImage;
+    storage_image_binding.descriptorCount = 1024;
+    storage_image_binding.binding = 11;
+
+    vk::DescriptorSetLayoutBinding bindless_bindings[] = { image_sampler_binding, storage_image_binding };
+
+    vk::DescriptorSetLayoutCreateInfo bindless_layout_create_info{};
+    bindless_layout_create_info.sType = vk::StructureType::eDescriptorSetLayoutCreateInfo;
+    bindless_layout_create_info.bindingCount = 2;
+    bindless_layout_create_info.pBindings = bindless_bindings;
+    bindless_layout_create_info.flags = vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPoolEXT;
+
+    vk::DescriptorBindingFlags bindless_flags = vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eUpdateAfterBind;
+
+    vk::DescriptorBindingFlags binding_flags[] = {bindless_flags, bindless_flags};
+    vk::DescriptorSetLayoutBindingFlagsCreateInfoEXT extended_info{};
+    extended_info.sType = vk::StructureType::eDescriptorSetLayoutBindingFlagsCreateInfoEXT;
+    extended_info.bindingCount = 2;
+    extended_info.pBindingFlags = binding_flags;
+
+    bindless_layout_create_info.pNext = &extended_info;
+
+    if(m_logical_device.createDescriptorSetLayout(&bindless_layout_create_info, nullptr, &m_bindless_texture_set_layout) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to create descriptor set layout!");
+    }
 }
 
 void Renderer::create_graphics_pipeline()
@@ -1304,17 +1369,24 @@ void Renderer::create_graphics_pipeline()
     pipeline_layout_info.sType = vk::StructureType::ePipelineLayoutCreateInfo;
 
     // need to specify the descriptor set layout here
-    pipeline_layout_info.setLayoutCount = 2;
-    vk::DescriptorSetLayout layouts[] = { m_camera_data_layout, m_textured_set_layout };
+    pipeline_layout_info.setLayoutCount = 3;
+    vk::DescriptorSetLayout layouts[] = { m_camera_data_layout, m_textured_set_layout, m_bindless_texture_set_layout };
     pipeline_layout_info.pSetLayouts = layouts;
 
     // need to tell the pipeline that there will be a push constant coming in
-    vk::PushConstantRange push_constant_info{};
-    push_constant_info.offset = 0;
-    push_constant_info.size = sizeof(glm::mat4);
-    push_constant_info.stageFlags = vk::ShaderStageFlagBits::eVertex;
-    pipeline_layout_info.pushConstantRangeCount = 1;
-    pipeline_layout_info.pPushConstantRanges = &push_constant_info;
+    vk::PushConstantRange model_push_constant_info{};
+    model_push_constant_info.offset = 0;
+    model_push_constant_info.size = sizeof(glm::mat4);
+    model_push_constant_info.stageFlags = vk::ShaderStageFlagBits::eVertex;
+
+    vk::PushConstantRange texture_push_constant_info{};
+    texture_push_constant_info.offset = 64;
+    texture_push_constant_info.size = sizeof(glm::uvec4);
+    texture_push_constant_info.stageFlags = vk::ShaderStageFlagBits::eFragment;
+
+    vk::PushConstantRange push_constant_ranges[] = { model_push_constant_info, texture_push_constant_info };
+    pipeline_layout_info.pushConstantRangeCount = 2;
+    pipeline_layout_info.pPushConstantRanges = push_constant_ranges;
 
     if(m_logical_device.createPipelineLayout(&pipeline_layout_info, nullptr, &m_pipeline_layout) != vk::Result::eSuccess)
     {
@@ -1440,6 +1512,26 @@ void Renderer::create_descriptor_pool()
     pool_info.maxSets = static_cast<unsigned>(10);
 
     if(m_logical_device.createDescriptorPool(&pool_info, nullptr, &m_descriptor_pool) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to create descriptor pool!");
+    }
+
+    // bindless stuff
+    // FIXME: magic numbers
+    vk::DescriptorPoolSize pool_sizes_bindless[] =
+    {
+        { vk::DescriptorType::eCombinedImageSampler, 10 },
+        { vk::DescriptorType::eStorageImage, 10 }
+    };
+
+    pool_info = vk::DescriptorPoolCreateInfo{};
+    pool_info.sType = vk::StructureType::eDescriptorPoolCreateInfo;
+    pool_info.flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBindEXT;
+    pool_info.maxSets = 20;
+    pool_info.poolSizeCount = (u32)2;
+    pool_info.pPoolSizes = pool_sizes_bindless;
+
+    if(m_logical_device.createDescriptorPool(&pool_info, nullptr, &m_descriptor_pool_bindless) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create descriptor pool!");
     }

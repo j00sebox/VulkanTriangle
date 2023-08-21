@@ -21,7 +21,8 @@ struct SwapChainSupportDetails
 // required extensions the device should have
 const std::vector<const char *> g_device_extensions =
 {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME // for bindless resources
 };
 
 namespace DeviceHelper
@@ -82,7 +83,15 @@ namespace DeviceHelper
 
     bool is_device_suitable(vk::PhysicalDevice device)
     {
-        return check_device_extension_support(device);
+        vk::PhysicalDeviceDescriptorIndexingFeatures indexing_features;
+        indexing_features.sType = vk::StructureType::ePhysicalDeviceDescriptorIndexingFeaturesEXT;
+
+        vk::PhysicalDeviceFeatures2 physical_device_features2;
+        physical_device_features2.sType = vk::StructureType::ePhysicalDeviceFeatures2;
+        physical_device_features2.pNext = &indexing_features;
+        device.getFeatures2(&physical_device_features2);
+
+        return indexing_features.descriptorBindingPartiallyBound && indexing_features.runtimeDescriptorArray && check_device_extension_support(device);
     }
 
     static int rate_device_suitability(vk::PhysicalDevice device)
@@ -104,7 +113,8 @@ namespace DeviceHelper
         score += device_properties.limits.maxImageDimension2D;
 
         // no geometry shader, no deal Howie
-        if (!device_features.geometryShader) {
+        if (!device_features.geometryShader)
+        {
             return 0;
         }
 

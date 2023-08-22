@@ -78,15 +78,14 @@ Renderer::~Renderer()
     }
 
     destroy_texture(m_null_texture);
+    destroy_sampler(m_default_sampler);
 
     cleanup_swapchain();
 
     m_logical_device.destroyDescriptorPool(m_descriptor_pool, nullptr);
-    m_logical_device.destroyDescriptorPool(m_descriptor_pool_bindless, nullptr);
     m_logical_device.destroyDescriptorSetLayout(m_descriptor_set_layout, nullptr);
     m_logical_device.destroyDescriptorSetLayout(m_camera_data_layout, nullptr);
-    m_logical_device.destroyDescriptorSetLayout(m_textured_set_layout, nullptr);
-    m_logical_device.destroyDescriptorSetLayout(m_bindless_texture_set_layout, nullptr);
+    m_logical_device.destroyDescriptorSetLayout(m_texture_set_layout, nullptr);
 
     vmaDestroyAllocator(m_allocator);
 
@@ -131,15 +130,16 @@ void Renderer::render(Scene* scene)
     memcpy(m_camera_buffers_mapped[m_current_frame], &camera_data, pad_uniform_buffer(sizeof(camera_data)));
 
     begin_frame();
+
+    auto* material_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(m_texture_set));
+    m_command_buffers[m_current_frame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 1, 1, &material_set->vk_descriptor_set, 0, nullptr);
+
     for(const Model& model : scene->models)
     {
         // need to bind right descriptor sets before draw call
         // descriptor sets are not unique to graphics pipelines
         auto* camera_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(m_camera_sets[m_current_frame]));
         m_command_buffers[m_current_frame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0, 1, &camera_set->vk_descriptor_set, 0, nullptr);
-
-        auto* material_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(model.material.descriptor_set));
-        m_command_buffers[m_current_frame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 2, 1, &material_set->vk_descriptor_set, 0, nullptr);
 
         m_command_buffers[m_current_frame].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model.transform);
         m_command_buffers[m_current_frame].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eFragment, 64, sizeof(glm::uvec4), model.material.textures);
@@ -251,13 +251,6 @@ void Renderer::create_device()
     physical_device_features.samplerAnisotropy = true;
 
     // setup for bindless resources
-//    vk::PhysicalDeviceDescriptorIndexingFeatures indexing_features{};
-//    indexing_features.sType = vk::StructureType::ePhysicalDeviceDescriptorIndexingFeatures;
-
-//    vk::PhysicalDeviceFeatures2 physical_features2{};
-//    physical_features2.sType = vk::StructureType::ePhysicalDeviceFeatures2;
-//    physical_features2.features = physical_device_features;
-
     vk::PhysicalDeviceVulkan12Features physical_device_features12{};
     physical_device_features12.sType = vk::StructureType::ePhysicalDeviceVulkan12Features;
     physical_device_features12.descriptorBindingSampledImageUpdateAfterBind = true;
@@ -267,11 +260,6 @@ void Renderer::create_device()
     physical_device_features12.descriptorBindingPartiallyBound = true;
     physical_device_features12.runtimeDescriptorArray = true;
     physical_device_features12.shaderSampledImageArrayNonUniformIndexing = true;
-
-//    m_physical_device.getFeatures2(&physical_features2);
-//    physical_features2.pNext = &indexing_features;
-
-    //physical_features12.pNext = &indexing_features;
 
     vk::DeviceCreateInfo create_info{};
     create_info.sType = vk::StructureType::eDeviceCreateInfo;
@@ -749,7 +737,7 @@ u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_
 
     vk::DescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType = vk::StructureType::eDescriptorSetAllocateInfo;
-    allocInfo.descriptorPool = m_descriptor_pool_bindless;
+    allocInfo.descriptorPool = m_descriptor_pool;
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &descriptor_set_creation.layout;
 
@@ -804,8 +792,8 @@ u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_
 
                 descriptor_writes[i].sType = vk::StructureType::eWriteDescriptorSet;
                 descriptor_writes[i].dstSet = descriptor_set->vk_descriptor_set; // descriptor set to update
-                descriptor_writes[i].dstBinding = 10;
-                descriptor_writes[i].dstArrayElement = descriptor_set_creation.resource_handles[i];
+                descriptor_writes[i].dstBinding = descriptor_set_creation.bindings[i];
+                descriptor_writes[i].dstArrayElement = 0;
                 descriptor_writes[i].descriptorType = vk::DescriptorType::eCombinedImageSampler;
                 descriptor_writes[i].descriptorCount = 1; // how many array elements to update
                 descriptor_writes[i].pImageInfo = &descriptor_info;
@@ -873,6 +861,34 @@ vk::ShaderModule Renderer::create_shader_module(const std::vector<char>& code)
 
     // wrappers around shader bytecode
     return shader_module;
+}
+
+void Renderer::update_texture_set(u32* texture_handles, u32 num_textures)
+{
+    auto* texture_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(m_texture_set));
+
+    // TODO: make it update all at once
+    for(i32 i = 0; i < num_textures; ++i)
+    {
+        auto* texture = static_cast<Texture*>(m_texture_pool.access(texture_handles[i]));
+        auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(m_default_sampler)); // FIXME: magic number
+
+        vk::DescriptorImageInfo descriptor_info{};
+        descriptor_info.imageView = texture->vk_image_view;
+        descriptor_info.sampler = sampler->vk_sampler;
+        descriptor_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+
+        vk::WriteDescriptorSet descriptor_write{};
+        descriptor_write.sType = vk::StructureType::eWriteDescriptorSet;
+        descriptor_write.dstSet = texture_set->vk_descriptor_set; // descriptor set to update
+        descriptor_write.dstBinding = 10; // FIXME: magic number
+        descriptor_write.dstArrayElement = texture_handles[i];
+        descriptor_write.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+        descriptor_write.descriptorCount = 1; // how many array elements to update
+        descriptor_write.pImageInfo = &descriptor_info;
+
+        m_logical_device.updateDescriptorSets(1, &descriptor_write, 0, nullptr);
+    }
 }
 
 void Renderer::destroy_buffer(u32 buffer_handle)
@@ -1096,31 +1112,6 @@ void Renderer::init_descriptor_sets()
         throw std::runtime_error("failed to create descriptor set layout!");
     }
 
-    i32 texture_count = 4;
-
-    vk::DescriptorSetLayoutBinding texture_set_layout_bindings[texture_count];
-    for(int i = 0; i < texture_count; ++i)
-    {
-        vk::DescriptorSetLayoutBinding textured_layout_binding{};
-        textured_layout_binding.binding = i;
-        textured_layout_binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
-        textured_layout_binding.descriptorCount = 1;
-        textured_layout_binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
-        textured_layout_binding.pImmutableSamplers = nullptr;
-
-        texture_set_layout_bindings[i] = textured_layout_binding;
-    }
-
-    vk::DescriptorSetLayoutCreateInfo textured_layout_info{};
-    textured_layout_info.sType = vk::StructureType::eDescriptorSetLayoutCreateInfo;
-    textured_layout_info.bindingCount = texture_count;
-    textured_layout_info.pBindings = texture_set_layout_bindings;
-
-    if(m_logical_device.createDescriptorSetLayout(&textured_layout_info, nullptr, &m_textured_set_layout) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to create descriptor set layout!");
-    }
-
     // create the buffers for the view/projection transforms
     u32 camera_buffer_size = pad_uniform_buffer(sizeof(CameraData));
     u32 light_buffer_size = pad_uniform_buffer(sizeof(LightingData));
@@ -1165,7 +1156,7 @@ void Renderer::init_descriptor_sets()
         });
     }
 
-    // bindless
+    // bindless texture set layout
     // FIXME: magic numbers
     vk::DescriptorSetLayoutBinding image_sampler_binding{};
     image_sampler_binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
@@ -1188,7 +1179,7 @@ void Renderer::init_descriptor_sets()
 
     vk::DescriptorBindingFlags bindless_flags = vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eUpdateAfterBind;
 
-    vk::DescriptorBindingFlags binding_flags[] = {bindless_flags, bindless_flags};
+    vk::DescriptorBindingFlags binding_flags[] = { bindless_flags, bindless_flags };
     vk::DescriptorSetLayoutBindingFlagsCreateInfoEXT extended_info{};
     extended_info.sType = vk::StructureType::eDescriptorSetLayoutBindingFlagsCreateInfoEXT;
     extended_info.bindingCount = 2;
@@ -1196,10 +1187,33 @@ void Renderer::init_descriptor_sets()
 
     bindless_layout_create_info.pNext = &extended_info;
 
-    if(m_logical_device.createDescriptorSetLayout(&bindless_layout_create_info, nullptr, &m_bindless_texture_set_layout) != vk::Result::eSuccess)
+    if(m_logical_device.createDescriptorSetLayout(&bindless_layout_create_info, nullptr, &m_texture_set_layout) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create descriptor set layout!");
     }
+
+    m_texture_set = m_descriptor_set_pool.acquire();
+    auto* descriptor_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(m_texture_set));
+
+    vk::DescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = vk::StructureType::eDescriptorSetAllocateInfo;
+    allocInfo.descriptorPool = m_descriptor_pool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_texture_set_layout;
+
+    if(vk::Result result = m_logical_device.allocateDescriptorSets(&allocInfo, &descriptor_set->vk_descriptor_set); result != vk::Result::eSuccess)
+    {
+        std::cout << (int)result << std::endl;
+        throw std::runtime_error("failed to create descriptor set!");
+    }
+
+    m_default_sampler = create_sampler({
+        .min_filter = vk::Filter::eLinear,
+        .mag_filter = vk::Filter::eLinear,
+        .u_mode = vk::SamplerAddressMode::eRepeat,
+        .v_mode = vk::SamplerAddressMode::eRepeat,
+        .w_mode = vk::SamplerAddressMode::eRepeat
+    });
 }
 
 void Renderer::create_graphics_pipeline()
@@ -1369,8 +1383,8 @@ void Renderer::create_graphics_pipeline()
     pipeline_layout_info.sType = vk::StructureType::ePipelineLayoutCreateInfo;
 
     // need to specify the descriptor set layout here
-    pipeline_layout_info.setLayoutCount = 3;
-    vk::DescriptorSetLayout layouts[] = { m_camera_data_layout, m_textured_set_layout, m_bindless_texture_set_layout };
+    pipeline_layout_info.setLayoutCount = 2;
+    vk::DescriptorSetLayout layouts[] = {m_camera_data_layout, m_texture_set_layout };
     pipeline_layout_info.pSetLayouts = layouts;
 
     // need to tell the pipeline that there will be a push constant coming in
@@ -1494,44 +1508,23 @@ void Renderer::create_framebuffers()
 
 void Renderer::create_descriptor_pool()
 {
-    // first describe which descriptor types pur descriptor sets use and how many
-    // we allocate one of these descriptors for every frame
-    std::array<vk::DescriptorPoolSize, 2> pool_sizes{};
-    pool_sizes[0].type = vk::DescriptorType::eUniformBuffer;
-    pool_sizes[0].descriptorCount = static_cast<unsigned>(10);
-
-    pool_sizes[1].type = vk::DescriptorType::eCombinedImageSampler;
-    pool_sizes[1].descriptorCount = static_cast<unsigned>(10);
-
-    vk::DescriptorPoolCreateInfo pool_info{};
-    pool_info.sType = vk::StructureType::eDescriptorPoolCreateInfo;
-    pool_info.poolSizeCount = static_cast<unsigned>(pool_sizes.size());
-    pool_info.pPoolSizes = pool_sizes.data();
-
-    // describe max amount of individual descriptors that may be allocated
-    pool_info.maxSets = static_cast<unsigned>(10);
-
-    if(m_logical_device.createDescriptorPool(&pool_info, nullptr, &m_descriptor_pool) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to create descriptor pool!");
-    }
-
-    // bindless stuff
+    // first describe which descriptor types our descriptor sets use and how many
     // FIXME: magic numbers
     vk::DescriptorPoolSize pool_sizes_bindless[] =
     {
+        { vk::DescriptorType::eUniformBuffer, 10 },
         { vk::DescriptorType::eCombinedImageSampler, 10 },
         { vk::DescriptorType::eStorageImage, 10 }
     };
 
-    pool_info = vk::DescriptorPoolCreateInfo{};
+    vk::DescriptorPoolCreateInfo pool_info{};
     pool_info.sType = vk::StructureType::eDescriptorPoolCreateInfo;
-    pool_info.flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBindEXT;
+    pool_info.flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBindEXT; // for bindless resources
     pool_info.maxSets = 20;
-    pool_info.poolSizeCount = (u32)2;
+    pool_info.poolSizeCount = (u32)3;
     pool_info.pPoolSizes = pool_sizes_bindless;
 
-    if(m_logical_device.createDescriptorPool(&pool_info, nullptr, &m_descriptor_pool_bindless) != vk::Result::eSuccess)
+    if(m_logical_device.createDescriptorPool(&pool_info, nullptr, &m_descriptor_pool) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create descriptor pool!");
     }

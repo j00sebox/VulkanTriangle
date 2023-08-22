@@ -58,22 +58,10 @@ void ModelLoader::load_material(Material& material)
         material.textures[2] = m_renderer->get_null_texture_handle();
         material.textures[3] = m_renderer->get_null_texture_handle();
 
-        material.sampler = m_renderer->create_sampler({
-            .min_filter = vk::Filter::eLinear,
-            .mag_filter = vk::Filter::eLinear,
-            .u_mode = vk::SamplerAddressMode::eRepeat,
-            .v_mode = vk::SamplerAddressMode::eRepeat,
-            .w_mode = vk::SamplerAddressMode::eRepeat
-        });
+        // FIXME
+        u32 texture_handles[] = { material.textures[0], m_renderer->get_null_texture_handle(), m_renderer->get_null_texture_handle(), m_renderer->get_null_texture_handle() };
+        m_renderer->update_texture_set(texture_handles, 4);
 
-        material.descriptor_set = m_renderer->create_descriptor_set({
-            .resource_handles = { material.textures[0], m_renderer->get_null_texture_handle(), m_renderer->get_null_texture_handle(), m_renderer->get_null_texture_handle() },
-            .sampler_handles = { material.sampler, material.sampler, material.sampler, material.sampler },
-            .bindings = {0, 1, 2, 3},
-            .types = {vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler},
-            .layout = m_renderer->get_texture_layout(),
-            .num_resources = 4
-        });
         return;
     }
 
@@ -108,22 +96,9 @@ void ModelLoader::load_material(Material& material)
         }
     }
 
-    material.sampler = m_renderer->create_sampler({
-        .min_filter = vk::Filter::eLinear,
-        .mag_filter = vk::Filter::eLinear,
-        .u_mode = vk::SamplerAddressMode::eRepeat,
-        .v_mode = vk::SamplerAddressMode::eRepeat,
-        .w_mode = vk::SamplerAddressMode::eRepeat
-    });
-
-    material.descriptor_set = m_renderer->create_descriptor_set({
-        .resource_handles = { material.textures[0], material.textures[1], material.textures[2], material.textures[3] },
-        .sampler_handles = { material.sampler, material.sampler, material.sampler, material.sampler },
-        .bindings = {10, 10, 10, 10},
-        .types = {vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler, vk::DescriptorType::eCombinedImageSampler},
-        .layout = m_renderer->get_texture_layout(),
-        .num_resources = 4
-    });
+    // FIXME
+    u32 texture_handles[] = { material.textures[0], material.textures[1], material.textures[2], material.textures[3] };
+    m_renderer->update_texture_set(texture_handles, 4);
 }
 
 const char* ModelLoader::get_name()

@@ -38,6 +38,8 @@ public:
     vk::ImageView create_image_view(const vk::Image& image, vk::Format format, vk::ImageAspectFlags image_aspect);
     vk::ShaderModule create_shader_module(const std::vector<char>& code);
 
+    void update_texture_set(u32* texture_handles, u32 num_textures);
+
     void destroy_buffer(u32 buffer_handle);
     void destroy_texture(u32 texture_handle);
     void destroy_sampler(u32 sampler_handle);
@@ -47,7 +49,7 @@ public:
 
     void wait_for_device_idle() { m_logical_device.waitIdle(); }
 
-    [[nodiscard]] const vk::DescriptorSetLayout& get_texture_layout() const { return m_bindless_texture_set_layout; }
+    [[nodiscard]] const vk::DescriptorSetLayout& get_texture_layout() const { return m_texture_set_layout; }
     [[nodiscard]] u32 get_null_texture_handle() const { return m_null_texture; }
 
 private:
@@ -72,13 +74,12 @@ private:
     vk::RenderPass m_render_pass;
     vk::DescriptorSetLayout m_descriptor_set_layout;
     vk::DescriptorSetLayout m_camera_data_layout;
-    vk::DescriptorSetLayout m_textured_set_layout;
-    vk::DescriptorSetLayout m_bindless_texture_set_layout;
+    vk::DescriptorSetLayout m_texture_set_layout;
     vk::DescriptorPool m_descriptor_pool;
-    vk::DescriptorPool m_descriptor_pool_bindless;
     vk::DescriptorPool m_imgui_pool;
     std::vector<vk::DescriptorSet> m_descriptor_sets;
     std::vector<u32> m_camera_sets;
+    u32 m_texture_set;
     vk::PipelineLayout m_pipeline_layout;
     vk::Pipeline m_graphics_pipeline;
 
@@ -124,6 +125,9 @@ private:
 
     // texture used when loader can't find one
     u32 m_null_texture;
+
+    // for most texture use
+    u32 m_default_sampler;
 
     void create_instance();
     void create_surface();

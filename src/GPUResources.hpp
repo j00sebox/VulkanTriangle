@@ -1,6 +1,9 @@
 #pragma once
 #include "config.hpp"
+
 #include <vk_mem_alloc.h>
+
+const u32 k_max_bindless_resources = 10;
 
 struct Buffer
 {
@@ -71,6 +74,21 @@ struct SamplerCreationInfo
     vk::SamplerAddressMode          w_mode;
 };
 
+// FIXME: magic numbers
+struct DescriptorSetLayoutCreationInfo
+{
+    struct Binding
+    {
+
+        vk::DescriptorType          type    = vk::DescriptorType::eMutableVALVE;
+        u16                         start   = 0;
+        u16                         count   = 0;
+    };
+
+    Binding                         bindings[16];
+    u32                             num_bindings    = 0;
+    u32                             set_index       = 0;
+};
 
 // FIXME: naughty magic numbers
 struct DescriptorSetCreationInfo

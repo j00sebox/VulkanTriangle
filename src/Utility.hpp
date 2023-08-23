@@ -1,30 +1,27 @@
+#include "GPUResources.hpp"
+
 #include <string>
 #include <vector>
-#include <fstream>
+#include <spirv.hpp>
+#include <vulkan/vulkan.hpp>
 
-namespace Util
+namespace util
 {
     // reads all bytes from SPIR-V bin and return byte array
-    static std::vector<char> read_file(const std::string& file_name)
+    std::vector<u8> read_shader_file(const std::string& file_name);
+
+    // SPIR-V parsing
+    namespace spirv
     {
-        // ate: start reading at the end of the file
-        // binary: read file as a binary to avoid text transformations
-        std::ifstream file(file_name, std::ios::ate | std::ios::binary);
+        static const u32 MAX_SET_COUNT = 32;
 
-        if(!file.is_open())
+        struct ParseResult
         {
-            throw std::runtime_error("failed to open file!");
-        }
+            u32                         set_count;
+            DescriptorSetLayoutCreationInfo sets[MAX_SET_COUNT];
+        };
 
-        size_t file_size = (size_t)file.tellg();
-        std::vector<char> buffer(file_size);
-
-        // go back to beginning of file and read it
-        file.seekg(0);
-        file.read(buffer.data(), file_size);
-
-        file.close();
-
-        return buffer;
+        void parse_binary(const u32* spirv_data, u32 size, ParseResult& result);
+        vk::ShaderStageFlags parse_execution_model(spv::ExecutionModel execution_model);
     }
 }

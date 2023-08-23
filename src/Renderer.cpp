@@ -1160,13 +1160,13 @@ void Renderer::init_descriptor_sets()
     // FIXME: magic numbers
     vk::DescriptorSetLayoutBinding image_sampler_binding{};
     image_sampler_binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
-    image_sampler_binding.descriptorCount = 1024; // max bindless resources
+    image_sampler_binding.descriptorCount = k_max_bindless_resources; // max bindless resources
     image_sampler_binding.binding = 10; // binding for all bindless textures (paradox)
     image_sampler_binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
 
     vk::DescriptorSetLayoutBinding storage_image_binding{};
     storage_image_binding.descriptorType = vk::DescriptorType::eStorageImage;
-    storage_image_binding.descriptorCount = 1024;
+    storage_image_binding.descriptorCount = k_max_bindless_resources;
     storage_image_binding.binding = 11;
 
     vk::DescriptorSetLayoutBinding bindless_bindings[] = { image_sampler_binding, storage_image_binding };
@@ -1218,8 +1218,12 @@ void Renderer::init_descriptor_sets()
 
 void Renderer::create_graphics_pipeline()
 {
-    auto vert_shader_code = Util::read_file("../shaders/vert.spv");
-    auto frag_shader_code = Util::read_file("../shaders/frag.spv");
+    auto vert_shader_code = util::read_shader_file("../shaders/vert.spv");
+    auto frag_shader_code = util::read_shader_file("../shaders/frag.spv");
+
+    // TODO: do some thing with this
+    util::spirv::ParseResult parse_result{};
+    util::spirv::parse_binary((u32*)vert_shader_code.data(), vert_shader_code.size(), parse_result);
 
     vk::ShaderModule vert_shader_module = create_shader_module(vert_shader_code);
     vk::ShaderModule frag_shader_module = create_shader_module(frag_shader_code);
@@ -1510,11 +1514,11 @@ void Renderer::create_descriptor_pool()
 {
     // first describe which descriptor types our descriptor sets use and how many
     // FIXME: magic numbers
-    vk::DescriptorPoolSize pool_sizes_bindless[] =
+    vk::DescriptorPoolSize pool_sizes[] =
     {
-        { vk::DescriptorType::eUniformBuffer, 10 },
-        { vk::DescriptorType::eCombinedImageSampler, 10 },
-        { vk::DescriptorType::eStorageImage, 10 }
+        { vk::DescriptorType::eUniformBuffer, k_max_bindless_resources },
+        { vk::DescriptorType::eCombinedImageSampler, k_max_bindless_resources },
+        { vk::DescriptorType::eStorageImage, k_max_bindless_resources }
     };
 
     vk::DescriptorPoolCreateInfo pool_info{};
@@ -1522,7 +1526,7 @@ void Renderer::create_descriptor_pool()
     pool_info.flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBindEXT; // for bindless resources
     pool_info.maxSets = 20;
     pool_info.poolSizeCount = (u32)3;
-    pool_info.pPoolSizes = pool_sizes_bindless;
+    pool_info.pPoolSizes = pool_sizes;
 
     if(m_logical_device.createDescriptorPool(&pool_info, nullptr, &m_descriptor_pool) != vk::Result::eSuccess)
     {

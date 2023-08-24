@@ -3,7 +3,7 @@
 
 #include <vk_mem_alloc.h>
 
-const u32 k_max_bindless_resources = 10;
+const u32 k_max_bindless_resources = 1024;
 
 struct Buffer
 {

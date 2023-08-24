@@ -1218,8 +1218,21 @@ void Renderer::init_descriptor_sets()
 
 void Renderer::create_graphics_pipeline()
 {
-    auto vert_shader_code = util::read_shader_file("../shaders/vert.spv");
-    auto frag_shader_code = util::read_shader_file("../shaders/frag.spv");
+    std::vector<u8> pipeline_cache_data = util::read_binary_file("pipeline_cache.bin");
+
+    vk::PipelineCache pipeline_cache = nullptr;
+    vk::PipelineCacheCreateInfo pipeline_cache_info{};
+    pipeline_cache_info.sType = vk::StructureType::ePipelineCacheCreateInfo;
+    pipeline_cache_info.pInitialData = pipeline_cache_data.data();
+    pipeline_cache_info.initialDataSize = pipeline_cache_data.size();
+
+    if(m_logical_device.createPipelineCache(&pipeline_cache_info, nullptr, &pipeline_cache) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("Failed to create pipeline cache!");
+    }
+
+    auto vert_shader_code = util::read_binary_file("../shaders/vert.spv");
+    auto frag_shader_code = util::read_binary_file("../shaders/frag.spv");
 
     // TODO: do some thing with this
     util::spirv::ParseResult parse_result{};
@@ -1441,11 +1454,29 @@ void Renderer::create_graphics_pipeline()
 
     // you can actually use this one function call to make multiple pipelines
     // the second param references a vk::PipelineCache object
-    if(m_logical_device.createGraphicsPipelines(nullptr, 1, &pipeline_info, nullptr, &m_graphics_pipeline) != vk::Result::eSuccess)
+    if(m_logical_device.createGraphicsPipelines(pipeline_cache, 1, &pipeline_info, nullptr, &m_graphics_pipeline) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create graphics pipeline!");
     }
 
+    size_t cache_data_size = 0;
+
+    if(m_logical_device.getPipelineCacheData(pipeline_cache, &cache_data_size, nullptr) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("Failed to fetch pipeline cache data!");
+    }
+
+    void* cache_data = malloc(cache_data_size);
+
+    if(m_logical_device.getPipelineCacheData(pipeline_cache, &cache_data_size, cache_data) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("Failed to fetch pipeline cache data!");
+    }
+
+    util::write_binary_file(cache_data, cache_data_size, "pipeline_cache.bin");
+    free(cache_data);
+
+    m_logical_device.destroyPipelineCache(pipeline_cache, nullptr);
     m_logical_device.destroyShaderModule(vert_shader_module, nullptr);
     m_logical_device.destroyShaderModule(frag_shader_module, nullptr);
 }

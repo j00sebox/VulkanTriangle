@@ -7,8 +7,9 @@
 
 namespace util
 {
-    // reads all bytes from SPIR-V bin and return byte array
-    std::vector<u8> read_shader_file(const std::string& file_name);
+    // reads all bytes from binaries like SPIR-V returns a byte array
+    std::vector<u8> read_binary_file(const std::string& file_name);
+    void write_binary_file(void* data, size_t size, const char* file_name);
 
     // SPIR-V parsing
     namespace spirv

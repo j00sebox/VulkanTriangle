@@ -3,7 +3,7 @@
 
 namespace util
 {
-    std::vector<u8> read_shader_file(const std::string& file_name)
+    std::vector<u8> read_binary_file(const std::string& file_name)
     {
         // ate: start reading at the end of the file
         // binary: read file as a binary to avoid text transformations
@@ -24,6 +24,20 @@ namespace util
         file.close();
 
         return buffer;
+    }
+
+    void write_binary_file(void* data, size_t size, const char* file_name)
+    {
+        std::ofstream  file(file_name, std::ios::binary);
+
+        if(!file.is_open())
+        {
+            throw std::runtime_error("failed to open file!");
+        }
+
+        file.write((char*)data, size);
+
+        file.close();
     }
 
     namespace spirv
@@ -93,7 +107,7 @@ namespace util
             for(u32 word_index = 5; word_index < spv_word_count;)
             {
                 // the op type is stored in the bottom byte
-                spv::Op op = (spv::Op)(spirv_data[word_index] & 0xFF);
+                auto op = (spv::Op)(spirv_data[word_index] & 0xFF);
 
                 // this is the number of words belonging to this operation
                 u16 word_count = (u16)(spirv_data[word_index] >> 16);
@@ -103,7 +117,7 @@ namespace util
                     case (spv::OpEntryPoint):
                     {
                         // can figure out what kind of shader we are dealing with
-                        spv::ExecutionModel model = (spv::ExecutionModel)spirv_data[word_index + 1];
+                        auto model = (spv::ExecutionModel)spirv_data[word_index + 1];
                         stage_flag = parse_execution_model(model);
                         break;
                     }
@@ -114,7 +128,7 @@ namespace util
                         Id& id = ids[id_index];
 
                         // decorations are extra info added to ids or structs
-                        spv::Decoration decoration = (spv::Decoration)spirv_data[word_index + 2];
+                        auto decoration = (spv::Decoration)spirv_data[word_index + 2];
 
                         switch(decoration)
                         {

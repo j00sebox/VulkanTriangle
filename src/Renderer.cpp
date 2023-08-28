@@ -4,6 +4,8 @@
 #include "Vertex.hpp"
 #include "Utility.hpp"
 
+#include <filesystem>
+
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
@@ -1218,17 +1220,24 @@ void Renderer::init_descriptor_sets()
 
 void Renderer::create_graphics_pipeline()
 {
-    std::vector<u8> pipeline_cache_data = util::read_binary_file("pipeline_cache.bin");
+
+    bool pipeline_cache_exists = std::filesystem::exists("pipeline_cache.bin");
 
     vk::PipelineCache pipeline_cache = nullptr;
-    vk::PipelineCacheCreateInfo pipeline_cache_info{};
-    pipeline_cache_info.sType = vk::StructureType::ePipelineCacheCreateInfo;
-    pipeline_cache_info.pInitialData = pipeline_cache_data.data();
-    pipeline_cache_info.initialDataSize = pipeline_cache_data.size();
 
-    if(m_logical_device.createPipelineCache(&pipeline_cache_info, nullptr, &pipeline_cache) != vk::Result::eSuccess)
+    if(pipeline_cache_exists)
     {
-        throw std::runtime_error("Failed to create pipeline cache!");
+        std::vector<u8> pipeline_cache_data = util::read_binary_file("pipeline_cache.bin");
+
+        vk::PipelineCacheCreateInfo pipeline_cache_info{};
+        pipeline_cache_info.sType = vk::StructureType::ePipelineCacheCreateInfo;
+        pipeline_cache_info.pInitialData = pipeline_cache_data.data();
+        pipeline_cache_info.initialDataSize = pipeline_cache_data.size();
+
+        if(m_logical_device.createPipelineCache(&pipeline_cache_info, nullptr, &pipeline_cache) != vk::Result::eSuccess)
+        {
+            throw std::runtime_error("Failed to create pipeline cache!");
+        }
     }
 
     auto vert_shader_code = util::read_binary_file("../shaders/vert.spv");
@@ -1459,22 +1468,25 @@ void Renderer::create_graphics_pipeline()
         throw std::runtime_error("failed to create graphics pipeline!");
     }
 
-    size_t cache_data_size = 0;
-
-    if(m_logical_device.getPipelineCacheData(pipeline_cache, &cache_data_size, nullptr) != vk::Result::eSuccess)
+    if(!pipeline_cache_exists)
     {
-        throw std::runtime_error("Failed to fetch pipeline cache data!");
+        size_t cache_data_size = 0;
+
+        if(m_logical_device.getPipelineCacheData(pipeline_cache, &cache_data_size, nullptr) != vk::Result::eSuccess)
+        {
+            throw std::runtime_error("Failed to fetch pipeline cache data!");
+        }
+
+        void* cache_data = malloc(cache_data_size);
+
+        if(m_logical_device.getPipelineCacheData(pipeline_cache, &cache_data_size, cache_data) != vk::Result::eSuccess)
+        {
+            throw std::runtime_error("Failed to fetch pipeline cache data!");
+        }
+
+        util::write_binary_file(cache_data, cache_data_size, "pipeline_cache.bin");
+        free(cache_data);
     }
-
-    void* cache_data = malloc(cache_data_size);
-
-    if(m_logical_device.getPipelineCacheData(pipeline_cache, &cache_data_size, cache_data) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("Failed to fetch pipeline cache data!");
-    }
-
-    util::write_binary_file(cache_data, cache_data_size, "pipeline_cache.bin");
-    free(cache_data);
 
     m_logical_device.destroyPipelineCache(pipeline_cache, nullptr);
     m_logical_device.destroyShaderModule(vert_shader_module, nullptr);

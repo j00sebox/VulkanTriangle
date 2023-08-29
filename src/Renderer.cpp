@@ -1220,23 +1220,34 @@ void Renderer::init_descriptor_sets()
 
 void Renderer::create_graphics_pipeline()
 {
-
-    bool pipeline_cache_exists = std::filesystem::exists("pipeline_cache.bin");
+    bool cache_exists = std::filesystem::exists("pipeline_cache.bin");
+    bool cache_header_valid = false;
 
     vk::PipelineCache pipeline_cache = nullptr;
 
-    if(pipeline_cache_exists)
+    if(cache_exists)
     {
         std::vector<u8> pipeline_cache_data = util::read_binary_file("pipeline_cache.bin");
 
-        vk::PipelineCacheCreateInfo pipeline_cache_info{};
-        pipeline_cache_info.sType = vk::StructureType::ePipelineCacheCreateInfo;
-        pipeline_cache_info.pInitialData = pipeline_cache_data.data();
-        pipeline_cache_info.initialDataSize = pipeline_cache_data.size();
+        // if there is a new driver version there is a chance that it won't be able to make use of the old cache file
+        // need to check some cache header details and compare them to our physical device
+        // if they match, create the cache like normal, otherwise need to overwrite it
+        auto* cache_header = (vk::PipelineCacheHeaderVersionOne*)pipeline_cache_data.data();
+        cache_header_valid = (cache_header->deviceID == m_device_properties.deviceID &&
+                cache_header->vendorID == m_device_properties.vendorID &&
+                memcmp(cache_header->pipelineCacheUUID, m_device_properties.pipelineCacheUUID, VK_UUID_SIZE) == 0);
 
-        if(m_logical_device.createPipelineCache(&pipeline_cache_info, nullptr, &pipeline_cache) != vk::Result::eSuccess)
+        if(cache_header_valid)
         {
-            throw std::runtime_error("Failed to create pipeline cache!");
+            vk::PipelineCacheCreateInfo pipeline_cache_info{};
+            pipeline_cache_info.sType = vk::StructureType::ePipelineCacheCreateInfo;
+            pipeline_cache_info.pInitialData = pipeline_cache_data.data();
+            pipeline_cache_info.initialDataSize = pipeline_cache_data.size();
+
+            if(m_logical_device.createPipelineCache(&pipeline_cache_info, nullptr, &pipeline_cache) != vk::Result::eSuccess)
+            {
+                throw std::runtime_error("Failed to create pipeline cache!");
+            }
         }
     }
 
@@ -1468,7 +1479,7 @@ void Renderer::create_graphics_pipeline()
         throw std::runtime_error("failed to create graphics pipeline!");
     }
 
-    if(!pipeline_cache_exists)
+    if(!cache_exists || !cache_header_valid)
     {
         size_t cache_data_size = 0;
 

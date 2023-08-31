@@ -283,7 +283,7 @@ void Renderer::create_device()
     QueueFamilyIndices indices = DeviceHelper::find_queue_families(m_physical_device, m_surface);
 
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
-    std::set<unsigned> unique_queue_families = {indices.graphics_family.value(), indices.present_family.value()};
+    std::set<unsigned> unique_queue_families = {indices.graphics_family.value(), indices.present_family.value(), indices.transfer_family.value()};
 
     float queue_priority = 1.f;
     for (unsigned queue_family: unique_queue_families)

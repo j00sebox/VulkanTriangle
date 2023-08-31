@@ -7,8 +7,9 @@ struct QueueFamilyIndices
 {
     std::optional<unsigned> graphics_family;
     std::optional<unsigned> present_family;
+    std::optional<unsigned> transfer_family;
 
-    [[nodiscard]] bool is_complete() const { return (graphics_family.has_value() && present_family.has_value()); }
+    [[nodiscard]] bool is_complete() const { return (graphics_family.has_value() && present_family.has_value() && transfer_family.has_value()); }
 };
 
 struct SwapChainSupportDetails
@@ -39,16 +40,24 @@ namespace DeviceHelper
         device.getQueueFamilyProperties(&queue_family_count, queue_families.data());
 
         int i = 0;
-        for (const auto &queue_family: queue_families) {
+        for (const auto &queue_family: queue_families)
+        {
             if (queue_family.queueFlags & vk::QueueFlagBits::eGraphics)
             {
                 indices.graphics_family = i;
+            }
+            else if(queue_family.queueFlags & vk::QueueFlagBits::eTransfer)
+            {
+                indices.transfer_family = i;
             }
 
             // it is very likely that these will be the same family
             // can add logic to prefer queue families that contain both
             vk::Bool32 present_support = false;
-            vk::Result result = device.getSurfaceSupportKHR(i, surface, &present_support);
+            if(device.getSurfaceSupportKHR(i, surface, &present_support) != vk::Result::eSuccess)
+            {
+                throw std::runtime_error("Could not retrieve surface support details !");
+            }
 
             if (present_support)
             {

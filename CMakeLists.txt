@@ -36,6 +36,7 @@ add_subdirectory(external/imgui)
 add_subdirectory(external/stb)
 add_subdirectory(external/assimp)
 add_subdirectory(external/SPIRV-Cross)
+add_subdirectory(external/enkiTS)
 
 include(src/CMakeLists.txt)
 add_executable(${PROJECT_NAME} ${SOURCE_FILES})
@@ -51,6 +52,7 @@ target_include_directories(${PROJECT_NAME}
         PUBLIC external/assimp/include
         PUBLIC external/vma
         PUBLIC external/SPIRV-Cross
+        PUBLIC external/enkiTS/src
 )
 
-target_link_libraries(${PROJECT_NAME} glfw vulkan imgui stb assimp spirv-cross-cpp)
+target_link_libraries(${PROJECT_NAME} glfw vulkan imgui stb assimp spirv-cross-cpp pthread enkiTS)

@@ -79,6 +79,8 @@ Renderer::~Renderer()
         destroy_buffer(m_light_buffers[i]);
     }
 
+    destroy_buffer(m_transfer_buffer);
+
     destroy_texture(m_null_texture);
     destroy_sampler(m_default_sampler);
 
@@ -91,7 +93,8 @@ Renderer::~Renderer()
 
     vmaDestroyAllocator(m_allocator);
 
-    m_logical_device.destroyCommandPool(m_command_pool, nullptr);
+    m_logical_device.destroyCommandPool(m_main_command_pool, nullptr);
+    m_logical_device.destroyCommandPool(m_transfer_command_pool, nullptr);
     m_logical_device.destroyPipeline(m_graphics_pipeline, nullptr);
     m_logical_device.destroyPipelineLayout(m_pipeline_layout, nullptr);
     m_logical_device.destroyRenderPass(m_render_pass, nullptr);
@@ -134,35 +137,35 @@ void Renderer::render(Scene* scene)
     begin_frame();
 
     auto* material_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(m_texture_set));
-    m_command_buffers[m_current_frame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 1, 1, &material_set->vk_descriptor_set, 0, nullptr);
+    m_main_command_buffers[m_current_frame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 1, 1, &material_set->vk_descriptor_set, 0, nullptr);
 
     for(const Model& model : scene->models)
     {
         // need to bind right descriptor sets before draw call
         // descriptor sets are not unique to graphics pipelines
         auto* camera_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(m_camera_sets[m_current_frame]));
-        m_command_buffers[m_current_frame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0, 1, &camera_set->vk_descriptor_set, 0, nullptr);
+        m_main_command_buffers[m_current_frame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0, 1, &camera_set->vk_descriptor_set, 0, nullptr);
 
-        m_command_buffers[m_current_frame].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model.transform);
-        m_command_buffers[m_current_frame].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eFragment, 64, sizeof(glm::uvec4), model.material.textures);
+        m_main_command_buffers[m_current_frame].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model.transform);
+        m_main_command_buffers[m_current_frame].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eFragment, 64, sizeof(glm::uvec4), model.material.textures);
 
         auto* vertex_buffer = static_cast<Buffer*>(m_buffer_pool.access(model.mesh.vertex_buffer));
         vk::Buffer vertex_buffers[] = {vertex_buffer->vk_buffer};
         vk::DeviceSize offsets[] = {0};
-        m_command_buffers[m_current_frame].bindVertexBuffers(0, 1, vertex_buffers, offsets);
+        m_main_command_buffers[m_current_frame].bindVertexBuffers(0, 1, vertex_buffers, offsets);
 
         auto* index_buffer = static_cast<Buffer*>(m_buffer_pool.access(model.mesh.index_buffer));
-        m_command_buffers[m_current_frame].bindIndexBuffer(index_buffer->vk_buffer, 0, vk::IndexType::eUint32);
+        m_main_command_buffers[m_current_frame].bindIndexBuffer(index_buffer->vk_buffer, 0, vk::IndexType::eUint32);
 
         // now we can issue the actual draw command
         // index count
         // instance count
         // first index: offset into the vertex buffer
         // first instance
-        m_command_buffers[m_current_frame].drawIndexed(model.mesh.index_count, 1, 0, 0, 0);
+        m_main_command_buffers[m_current_frame].drawIndexed(model.mesh.index_count, 1, 0, 0, 0);
     }
 
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), m_command_buffers[m_current_frame]);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), m_main_command_buffers[m_current_frame]);
     end_frame();
 
     m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -363,13 +366,13 @@ void Renderer::begin_frame()
 
    // update_uniform_buffer(m_current_frame);
 
-    m_command_buffers[m_current_frame].reset();
-    start_renderpass(m_command_buffers[m_current_frame], m_image_index);
+    m_main_command_buffers[m_current_frame].reset();
+    start_renderpass(m_main_command_buffers[m_current_frame], m_image_index);
 }
 
 void Renderer::end_frame()
 {
-    end_renderpass(m_command_buffers[m_current_frame]);
+    end_renderpass(m_main_command_buffers[m_current_frame]);
 
     vk::SubmitInfo submit_info{};
     submit_info.sType = vk::StructureType::eSubmitInfo;
@@ -383,7 +386,7 @@ void Renderer::end_frame()
 
     // which command buffers to submit
     submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &m_command_buffers[m_current_frame];
+    submit_info.pCommandBuffers = &m_main_command_buffers[m_current_frame];
 
     // which semaphores to signal once the command buffer is finished
     vk::Semaphore signal_semaphores[] = {m_render_finished_semaphores[m_current_frame]};
@@ -600,6 +603,11 @@ u32 Renderer::create_buffer(const BufferCreationInfo& buffer_creation)
     memory_info.flags = VMA_ALLOCATION_CREATE_STRATEGY_BEST_FIT_BIT;
     memory_info.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
+    if(buffer_creation.persistent)
+    {
+        memory_info.flags |= VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    }
+
     VmaAllocationInfo allocation_info{};
     vmaCreateBuffer(m_allocator, reinterpret_cast<const VkBufferCreateInfo*>(&buffer_info), &memory_info,
                     &buffer->vk_buffer, &buffer->vma_allocation, &allocation_info);
@@ -610,6 +618,11 @@ u32 Renderer::create_buffer(const BufferCreationInfo& buffer_creation)
         vmaMapMemory(m_allocator, buffer->vma_allocation, &data);
         memcpy(data, buffer_creation.data, (size_t)buffer_creation.size);
         vmaUnmapMemory(m_allocator, buffer->vma_allocation);
+    }
+
+    if(buffer_creation.persistent)
+    {
+        buffer->mapped_data = static_cast<u8*>(allocation_info.pMappedData);
     }
 
     return handle;
@@ -1225,6 +1238,9 @@ void Renderer::create_graphics_pipeline()
 
     vk::PipelineCache pipeline_cache = nullptr;
 
+    vk::PipelineCacheCreateInfo pipeline_cache_info{};
+    pipeline_cache_info.sType = vk::StructureType::ePipelineCacheCreateInfo;
+
     if(cache_exists)
     {
         std::vector<u8> pipeline_cache_data = util::read_binary_file("pipeline_cache.bin");
@@ -1239,16 +1255,14 @@ void Renderer::create_graphics_pipeline()
 
         if(cache_header_valid)
         {
-            vk::PipelineCacheCreateInfo pipeline_cache_info{};
-            pipeline_cache_info.sType = vk::StructureType::ePipelineCacheCreateInfo;
             pipeline_cache_info.pInitialData = pipeline_cache_data.data();
             pipeline_cache_info.initialDataSize = pipeline_cache_data.size();
-
-            if(m_logical_device.createPipelineCache(&pipeline_cache_info, nullptr, &pipeline_cache) != vk::Result::eSuccess)
-            {
-                throw std::runtime_error("Failed to create pipeline cache!");
-            }
         }
+    }
+
+    if(m_logical_device.createPipelineCache(&pipeline_cache_info, nullptr, &pipeline_cache) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("Failed to create pipeline cache!");
     }
 
     auto vert_shader_code = util::read_binary_file("../shaders/vert.spv");
@@ -1521,7 +1535,14 @@ void Renderer::create_command_pool()
     // since we're recording commands for drawing we make it the graphics queue
     pool_info.queueFamilyIndex = queue_family_indices.graphics_family.value();
 
-    if(m_logical_device.createCommandPool(&pool_info, nullptr, &m_command_pool) != vk::Result::eSuccess)
+    if(m_logical_device.createCommandPool(&pool_info, nullptr, &m_main_command_pool) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to create command pool!");
+    }
+
+    pool_info.queueFamilyIndex = queue_family_indices.transfer_family.value();
+
+    if(m_logical_device.createCommandPool(&pool_info, nullptr, &m_transfer_command_pool) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create command pool!");
     }
@@ -1590,20 +1611,36 @@ void Renderer::create_descriptor_pool()
 
 void Renderer::create_command_buffer()
 {
-    m_command_buffers.resize(MAX_FRAMES_IN_FLIGHT);
+    m_main_command_buffers.resize(MAX_FRAMES_IN_FLIGHT);
 
     vk::CommandBufferAllocateInfo alloc_info{};
     alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
-    alloc_info.commandPool = m_command_pool;
+    alloc_info.commandPool = m_main_command_pool;
 
     // primary buffers can be submitted to a queue for execution but cannot be called from other command buffers
     alloc_info.level = vk::CommandBufferLevel::ePrimary;
-    alloc_info.commandBufferCount = static_cast<unsigned>(m_command_buffers.size());
+    alloc_info.commandBufferCount = static_cast<u32>(m_main_command_buffers.size());
 
-    if(m_logical_device.allocateCommandBuffers(&alloc_info, m_command_buffers.data()) != vk::Result::eSuccess)
+    if(m_logical_device.allocateCommandBuffers(&alloc_info, m_main_command_buffers.data()) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to allocate command buffers!");
     }
+
+    alloc_info.commandPool = m_transfer_command_pool;
+    alloc_info.commandBufferCount = static_cast<u32>(m_transfer_command_buffers.size());
+
+    if(m_logical_device.allocateCommandBuffers(&alloc_info, m_transfer_command_buffers.data()) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to allocate command buffers!");
+    }
+
+    // TODO: find a home for this
+    // FIXME: magic numbers
+    m_transfer_buffer = create_buffer({
+        .usage = vk::BufferUsageFlagBits::eTransferSrc,
+        .size = 64 * 1024 * 1024, // 64MB
+        .persistent = true
+    });
 }
 
 void Renderer::create_sync_objects()
@@ -1827,7 +1864,7 @@ vk::CommandBuffer Renderer::begin_single_time_commands()
     vk::CommandBufferAllocateInfo alloc_info{};
     alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
     alloc_info.level = vk::CommandBufferLevel::ePrimary;
-    alloc_info.commandPool = m_command_pool;
+    alloc_info.commandPool = m_main_command_pool;
     alloc_info.commandBufferCount = 1;
 
     vk::CommandBuffer command_buffer;
@@ -1865,7 +1902,7 @@ void Renderer::end_single_time_commands(vk::CommandBuffer command_buffer)
     }
     m_graphics_queue.waitIdle();
 
-    m_logical_device.freeCommandBuffers(m_command_pool, 1, & command_buffer);
+    m_logical_device.freeCommandBuffers(m_main_command_pool, 1, & command_buffer);
 }
 
 bool Renderer::check_validation_layer_support()

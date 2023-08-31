@@ -11,6 +11,7 @@ struct Buffer
     VmaAllocation                   vma_allocation;
 
     u32                             size = 0;
+    u8*                             mapped_data = nullptr;
 };
 
 struct Texture
@@ -54,6 +55,7 @@ struct BufferCreationInfo
 {
     vk::BufferUsageFlags            usage;
     u32                             size;
+    bool                            persistent = false;
     void*                           data;
 };
 

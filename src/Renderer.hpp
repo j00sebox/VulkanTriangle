@@ -85,11 +85,18 @@ private:
 
     u32 m_image_index;
 
+    // allow multiple frames to be in-flight
+    // this means we allow a new frame to start being rendered without interfering with one being presented
+    // meaning we need multiple command buffers, semaphores and fences
+    static const u16 MAX_FRAMES_IN_FLIGHT = 3;
+
     // command pools manage the memory that is used to store the buffers and command buffers are allocated to them
-    vk::CommandPool m_command_pool;
+    vk::CommandPool m_main_command_pool;
+    vk::CommandPool m_transfer_command_pool;
 
     // each frame need its own command buffer, semaphores and fence
-    std::vector<vk::CommandBuffer> m_command_buffers;
+    std::vector<vk::CommandBuffer> m_main_command_buffers;
+    std::array<vk::CommandBuffer, MAX_FRAMES_IN_FLIGHT> m_transfer_command_buffers;
 
     // we want to use semaphores for swapchain operations since they happen on the GPU
     std::vector<vk::Semaphore> m_image_available_semaphores;
@@ -120,6 +127,8 @@ private:
 
     std::vector<u32> m_light_buffers;
     std::vector<void*> m_light_buffers_mapped;
+
+    u32 m_transfer_buffer;
 
     LightingData m_light_data;
 
@@ -153,10 +162,7 @@ private:
     vk::CommandBuffer begin_single_time_commands();
     void end_single_time_commands(vk::CommandBuffer command_buffer);
 
-    // allow multiple frames to be in-flight
-    // this means we allow a new frame to start being rendered without interfering with one being presented
-    // meaning we need multiple command buffers, semaphores and fences
-    const u16 MAX_FRAMES_IN_FLIGHT = 3;
+
 
     // keeps track of the current frame index
     u32 m_current_frame = 0;

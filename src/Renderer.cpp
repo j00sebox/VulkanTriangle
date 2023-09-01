@@ -29,19 +29,19 @@ Renderer::Renderer(GLFWwindow* window) :
     m_sampler_pool(&m_pool_allocator, 10, sizeof(Sampler)),
     m_descriptor_set_pool(&m_pool_allocator, 10, sizeof(DescriptorSet))
 {
-    create_instance();
-    create_surface();
-    create_device();
-    create_swapchain();
-    create_render_pass();
-    create_descriptor_pool();
+    init_instance();
+    init_surface();
+    init_device();
+    init_swapchain();
+    init_render_pass();
+    init_descriptor_pools();
     init_descriptor_sets();
-    create_graphics_pipeline();
-    create_command_pool();
-    create_depth_resources();
-    create_framebuffers();
-    create_command_buffer();
-    create_sync_objects();
+    init_graphics_pipeline();
+    init_command_pools();
+    init_depth_resources();
+    init_framebuffers();
+    init_command_buffers();
+    init_sync_objects();
 
     // create null texture
     m_null_texture = create_texture({
@@ -62,7 +62,7 @@ Renderer::~Renderer()
     ImGui_ImplVulkan_Shutdown();
     m_logical_device.destroyDescriptorPool(m_imgui_pool, nullptr);
 
-    for(i32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    for(i32 i = 0; i < s_max_frames_in_flight; ++i)
     {
         // sync objects
         m_logical_device.destroySemaphore(m_image_available_semaphores[i], nullptr);
@@ -70,14 +70,17 @@ Renderer::~Renderer()
         m_logical_device.destroyFence(m_in_flight_fences[i], nullptr);
 
         // uniform buffers
-        auto* buffer = static_cast<Buffer*>(m_buffer_pool.access(m_camera_buffers[i]));
-        vmaUnmapMemory(m_allocator, buffer->vma_allocation);
+//        auto* buffer = static_cast<Buffer*>(m_buffer_pool.access(m_camera_buffers[i]));
+//        vmaUnmapMemory(m_allocator, buffer->vma_allocation);
         destroy_buffer(m_camera_buffers[i]);
 
-        buffer = static_cast<Buffer*>(m_buffer_pool.access(m_light_buffers[i]));
-        vmaUnmapMemory(m_allocator, buffer->vma_allocation);
+//        buffer = static_cast<Buffer*>(m_buffer_pool.access(m_light_buffers[i]));
+//        vmaUnmapMemory(m_allocator, buffer->vma_allocation);
         destroy_buffer(m_light_buffers[i]);
     }
+
+    m_logical_device.destroySemaphore(m_transfer_semaphore, nullptr);
+    m_logical_device.destroyFence(m_transfer_fence, nullptr);
 
     destroy_buffer(m_transfer_buffer);
 
@@ -113,9 +116,10 @@ Renderer::~Renderer()
 void Renderer::configure_lighting(LightingData data)
 {
     m_light_data = data;
-    for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    for(int i = 0; i < s_max_frames_in_flight; ++i)
     {
-        memcpy(m_light_buffers_mapped[i], &m_light_data, pad_uniform_buffer(sizeof(m_light_data)));
+        auto* buffer = static_cast<Buffer*>(m_buffer_pool.access(m_light_buffers[i]));
+        memcpy(buffer->mapped_data, &m_light_data, pad_uniform_buffer(sizeof(m_light_data)));
     }
 }
 
@@ -132,7 +136,8 @@ void Renderer::render(Scene* scene)
 
     // this is the most efficient way to pass constantly changing values to the shader
     // another way to handle smaller data is to use push constants
-    memcpy(m_camera_buffers_mapped[m_current_frame], &camera_data, pad_uniform_buffer(sizeof(camera_data)));
+    auto* camera_buffer = static_cast<Buffer*>(m_buffer_pool.access(m_camera_buffers[m_current_frame]));
+    memcpy(camera_buffer->mapped_data, &camera_data, pad_uniform_buffer(sizeof(camera_data)));
 
     begin_frame();
 
@@ -168,10 +173,10 @@ void Renderer::render(Scene* scene)
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), m_main_command_buffers[m_current_frame]);
     end_frame();
 
-    m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+    m_current_frame = (m_current_frame + 1) % s_max_frames_in_flight;
 }
 
-void Renderer::create_instance()
+void Renderer::init_instance()
 {
     if (m_enable_validation_layers && !check_validation_layer_support())
     {
@@ -239,7 +244,7 @@ void Renderer::create_instance()
     }
 }
 
-void Renderer::create_surface()
+void Renderer::init_surface()
 {
     VkSurfaceKHR c_style_surface;
     if (glfwCreateWindowSurface(m_instance, m_window, nullptr, &c_style_surface) != VK_SUCCESS)
@@ -250,7 +255,7 @@ void Renderer::create_surface()
     m_surface = c_style_surface;
 }
 
-void Renderer::create_device()
+void Renderer::init_device()
 {
     vk::PhysicalDeviceFeatures physical_device_features{};
     physical_device_features.samplerAnisotropy = true;
@@ -329,6 +334,7 @@ void Renderer::create_device()
     // since we only set 1 queue we can just index at 0
     m_logical_device.getQueue(indices.graphics_family.value(), 0, &m_graphics_queue);
     m_logical_device.getQueue(indices.present_family.value(), 0, &m_present_queue);
+    m_logical_device.getQueue(indices.transfer_family.value(), 0, &m_transfer_queue);
 
     m_physical_device.getProperties(&m_device_properties);
 
@@ -494,9 +500,9 @@ void Renderer::recreate_swapchain()
 
     wait_for_device_idle();
     cleanup_swapchain();
-    create_swapchain();
-    create_depth_resources();
-    create_framebuffers();
+    init_swapchain();
+    init_depth_resources();
+    init_framebuffers();
 }
 
 void Renderer::create_image(u32 width, u32 height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::Image &image, vk::DeviceMemory &image_memory)
@@ -928,7 +934,7 @@ void Renderer::destroy_sampler(u32 sampler_handle)
     m_sampler_pool.free(sampler_handle);
 }
 
-void Renderer::create_swapchain()
+void Renderer::init_swapchain()
 {
     SwapChainSupportDetails swap_chain_support = DeviceHelper::query_swap_chain_support(m_physical_device, m_surface);
 
@@ -1020,7 +1026,7 @@ void Renderer::create_swapchain()
     }
 }
 
-void Renderer::create_render_pass()
+void Renderer::init_render_pass()
 {
     // in this case we just have a single colour buffer
     vk::AttachmentDescription colour_attachment{};
@@ -1131,36 +1137,26 @@ void Renderer::init_descriptor_sets()
     u32 camera_buffer_size = pad_uniform_buffer(sizeof(CameraData));
     u32 light_buffer_size = pad_uniform_buffer(sizeof(LightingData));
 
-    m_camera_buffers.resize(MAX_FRAMES_IN_FLIGHT);
-    m_camera_buffers_mapped.resize(MAX_FRAMES_IN_FLIGHT);
-
-    m_light_buffers.resize(MAX_FRAMES_IN_FLIGHT);
-    m_light_buffers_mapped.resize(MAX_FRAMES_IN_FLIGHT);
-
     // TODO: combine into one big buffer
-    for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    for(int i = 0; i < s_max_frames_in_flight; ++i)
     {
         m_camera_buffers[i] = create_buffer({
             .usage = vk::BufferUsageFlagBits::eUniformBuffer,
-            .size = camera_buffer_size
+            .size = camera_buffer_size,
+            .persistent = true
         });
-
-        auto* buffer = static_cast<Buffer*>(m_buffer_pool.access(m_camera_buffers[i]));
-        vmaMapMemory(m_allocator, buffer->vma_allocation, &m_camera_buffers_mapped[i]);
 
         m_light_buffers[i] = create_buffer({
             .usage = vk::BufferUsageFlagBits::eUniformBuffer,
-            .size = light_buffer_size
+            .size = light_buffer_size,
+            .persistent = true
         });
-
-        buffer = static_cast<Buffer*>(m_buffer_pool.access(m_light_buffers[i]));
-        vmaMapMemory(m_allocator, buffer->vma_allocation, &m_light_buffers_mapped[i]);
     }
 
-    m_camera_sets.resize(MAX_FRAMES_IN_FLIGHT);
+    m_camera_sets.resize(s_max_frames_in_flight);
 
     // create the sets for the camera
-    for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    for(int i = 0; i < s_max_frames_in_flight; ++i)
     {
         m_camera_sets[i] = create_descriptor_set({
            .resource_handles = {m_camera_buffers[i], m_light_buffers[i]},
@@ -1231,7 +1227,7 @@ void Renderer::init_descriptor_sets()
     });
 }
 
-void Renderer::create_graphics_pipeline()
+void Renderer::init_graphics_pipeline()
 {
     bool cache_exists = std::filesystem::exists("pipeline_cache.bin");
     bool cache_header_valid = false;
@@ -1518,7 +1514,7 @@ void Renderer::create_graphics_pipeline()
     m_logical_device.destroyShaderModule(frag_shader_module, nullptr);
 }
 
-void Renderer::create_command_pool()
+void Renderer::init_command_pools()
 {
     QueueFamilyIndices queue_family_indices = DeviceHelper::find_queue_families(m_physical_device, m_surface);
 
@@ -1548,7 +1544,7 @@ void Renderer::create_command_pool()
     }
 }
 
-void Renderer::create_depth_resources()
+void Renderer::init_depth_resources()
 {
     create_image(m_swapchain_extent.width, m_swapchain_extent.height,
                  vk::Format::eD32Sfloat, vk::ImageTiling::eOptimal,
@@ -1559,7 +1555,7 @@ void Renderer::create_depth_resources()
     m_depth_image_view = create_image_view(m_depth_image, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth);
 }
 
-void Renderer::create_framebuffers()
+void Renderer::init_framebuffers()
 {
     m_swapchain_framebuffers.resize(m_swapchain_image_views.size());
 
@@ -1585,7 +1581,7 @@ void Renderer::create_framebuffers()
     }
 }
 
-void Renderer::create_descriptor_pool()
+void Renderer::init_descriptor_pools()
 {
     // first describe which descriptor types our descriptor sets use and how many
     // FIXME: magic numbers
@@ -1609,10 +1605,8 @@ void Renderer::create_descriptor_pool()
     }
 }
 
-void Renderer::create_command_buffer()
+void Renderer::init_command_buffers()
 {
-    m_main_command_buffers.resize(MAX_FRAMES_IN_FLIGHT);
-
     vk::CommandBufferAllocateInfo alloc_info{};
     alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
     alloc_info.commandPool = m_main_command_pool;
@@ -1643,12 +1637,8 @@ void Renderer::create_command_buffer()
     });
 }
 
-void Renderer::create_sync_objects()
+void Renderer::init_sync_objects()
 {
-    m_image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    m_render_finished_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    m_in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
-
     vk::SemaphoreCreateInfo semaphore_info{};
     semaphore_info.sType = vk::StructureType::eSemaphoreCreateInfo;
 
@@ -1658,7 +1648,7 @@ void Renderer::create_sync_objects()
     // need it to start as signaled so wait for fence will return immediately on the first frame
     fence_info.flags = vk::FenceCreateFlagBits::eSignaled;
 
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    for(size_t i = 0; i < s_max_frames_in_flight; ++i)
     {
         if(m_logical_device.createSemaphore(&semaphore_info, nullptr, &m_image_available_semaphores[i]) != vk::Result::eSuccess ||
            m_logical_device.createSemaphore(&semaphore_info, nullptr, &m_render_finished_semaphores[i]) != vk::Result::eSuccess ||
@@ -1667,6 +1657,16 @@ void Renderer::create_sync_objects()
         {
             throw std::runtime_error("failed to create sync objects!");
         }
+    }
+
+    if (m_logical_device.createSemaphore(&semaphore_info, nullptr, &m_transfer_semaphore) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to create transfer semaphore!");
+    }
+
+    if(m_logical_device.createFence(&fence_info, nullptr, &m_transfer_fence) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to create transfer fence!");
     }
 }
 
@@ -1728,8 +1728,8 @@ void Renderer::init_imgui()
     init_info.Device = m_logical_device;
     init_info.Queue = m_graphics_queue;
     init_info.DescriptorPool = m_imgui_pool;
-    init_info.MinImageCount = MAX_FRAMES_IN_FLIGHT;
-    init_info.ImageCount = MAX_FRAMES_IN_FLIGHT;
+    init_info.MinImageCount = s_max_frames_in_flight;
+    init_info.ImageCount = s_max_frames_in_flight;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 
     ImGui_ImplVulkan_Init(&init_info, m_render_pass);

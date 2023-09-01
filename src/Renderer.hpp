@@ -88,28 +88,32 @@ private:
     // allow multiple frames to be in-flight
     // this means we allow a new frame to start being rendered without interfering with one being presented
     // meaning we need multiple command buffers, semaphores and fences
-    static const u16 MAX_FRAMES_IN_FLIGHT = 3;
+    static const u16 s_max_frames_in_flight = 3;
 
     // command pools manage the memory that is used to store the buffers and command buffers are allocated to them
     vk::CommandPool m_main_command_pool;
     vk::CommandPool m_transfer_command_pool;
 
     // each frame need its own command buffer, semaphores and fence
-    std::vector<vk::CommandBuffer> m_main_command_buffers;
-    std::array<vk::CommandBuffer, MAX_FRAMES_IN_FLIGHT> m_transfer_command_buffers;
+    std::array<vk::CommandBuffer, s_max_frames_in_flight> m_main_command_buffers;
+    std::array<vk::CommandBuffer, s_max_frames_in_flight> m_transfer_command_buffers;
 
     // we want to use semaphores for swapchain operations since they happen on the GPU
-    std::vector<vk::Semaphore> m_image_available_semaphores;
-    std::vector<vk::Semaphore> m_render_finished_semaphores;
+    std::array<vk::Semaphore, s_max_frames_in_flight> m_image_available_semaphores;
+    std::array<vk::Semaphore, s_max_frames_in_flight> m_render_finished_semaphores;
 
     // purpose is to order execution on the CPU
     // if the host need to know when the GPU had finished we need a fence
     // in signaled/unsignaled state
-    std::vector<vk::Fence> m_in_flight_fences;
+    std::array<vk::Fence, s_max_frames_in_flight> m_in_flight_fences;
+
+    vk::Semaphore m_transfer_semaphore;
+    vk::Fence m_transfer_fence;
 
     // queues
     vk::Queue m_graphics_queue;
     vk::Queue m_present_queue;
+    vk::Queue m_transfer_queue;
 
     // depth buffer
     vk::Image m_depth_image;
@@ -122,12 +126,10 @@ private:
     ResourcePool m_descriptor_set_pool;
 
     // uniform buffers
-    std::vector<u32> m_camera_buffers;
-    std::vector<void*> m_camera_buffers_mapped;
+    std::array<u32, s_max_frames_in_flight> m_camera_buffers;
+    std::array<u32, s_max_frames_in_flight> m_light_buffers;
 
-    std::vector<u32> m_light_buffers;
-    std::vector<void*> m_light_buffers_mapped;
-
+    // buffer that will be used by the resource loading thread
     u32 m_transfer_buffer;
 
     LightingData m_light_data;
@@ -138,19 +140,19 @@ private:
     // for most texture use
     u32 m_default_sampler;
 
-    void create_instance();
-    void create_surface();
-    void create_device();
-    void create_swapchain();
-    void create_render_pass();
-    void create_graphics_pipeline();
-    void create_command_pool();
-    void create_depth_resources();
-    void create_framebuffers();
-    void create_descriptor_pool();
+    void init_instance();
+    void init_surface();
+    void init_device();
+    void init_swapchain();
+    void init_render_pass();
+    void init_graphics_pipeline();
+    void init_command_pools();
+    void init_depth_resources();
+    void init_framebuffers();
+    void init_descriptor_pools();
     void init_descriptor_sets();
-    void create_command_buffer();
-    void create_sync_objects();
+    void init_command_buffers();
+    void init_sync_objects();
     void init_imgui();
 
     void cleanup_swapchain();

@@ -164,7 +164,7 @@ private:
     vk::CommandBuffer begin_single_time_commands();
     void end_single_time_commands(vk::CommandBuffer command_buffer);
 
-
+    std::unordered_map<const char*, u32> m_texture_map;
 
     // keeps track of the current frame index
     u32 m_current_frame = 0;

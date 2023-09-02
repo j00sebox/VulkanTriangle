@@ -29,6 +29,7 @@ public:
     void free(u32 handle);
 
     void* access(u32 handle);
+    bool valid_handle(u32 handle);
 
 private:
     PoolAllocator* m_allocator = nullptr;

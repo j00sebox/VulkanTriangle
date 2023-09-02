@@ -636,6 +636,11 @@ u32 Renderer::create_buffer(const BufferCreationInfo& buffer_creation)
 
 u32 Renderer::create_texture(const TextureCreationInfo& texture_creation)
 {
+    if(m_texture_map.contains(texture_creation.image_src))
+    {
+        return m_texture_map[texture_creation.image_src];
+    }
+
     u32 handle = m_texture_pool.acquire();
     auto* texture = static_cast<Texture*>(m_texture_pool.access(handle));
 
@@ -644,11 +649,11 @@ u32 Renderer::create_texture(const TextureCreationInfo& texture_creation)
     int width, height, channels;
     stbi_uc* pixels = stbi_load(texture_creation.image_src, &width, &height, &channels, STBI_rgb_alpha);
 
-
     vk::DeviceSize image_size = width * height * 4;
 
     texture->width = width;
     texture->height = height;
+    texture->name = texture_creation.image_src;
 
     if(!pixels)
     {
@@ -707,6 +712,8 @@ u32 Renderer::create_texture(const TextureCreationInfo& texture_creation)
     texture->vk_image_view = create_image_view(texture->vk_image, texture_creation.format, vk::ImageAspectFlagBits::eColor);
 
     destroy_buffer(staging_handle);
+
+    m_texture_map[texture_creation.image_src] = handle;
 
     return handle;
 }
@@ -921,10 +928,16 @@ void Renderer::destroy_buffer(u32 buffer_handle)
 
 void Renderer::destroy_texture(u32 texture_handle)
 {
+    if(!m_texture_pool.valid_handle(texture_handle))
+    {
+        return;
+    }
+
     auto* texture = static_cast<Texture*>(m_texture_pool.access(texture_handle));
     m_logical_device.destroyImageView(texture->vk_image_view, nullptr);
     vmaDestroyImage(m_allocator, texture->vk_image, texture->vma_allocation);
     m_texture_pool.free(texture_handle);
+    m_texture_map.erase(texture->name);
 }
 
 void Renderer::destroy_sampler(u32 sampler_handle)

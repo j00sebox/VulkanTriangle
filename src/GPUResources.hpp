@@ -26,6 +26,8 @@ struct Texture
     u16                             height = 1;
     u16                             depth = 1;
     u8                              mipmaps = 1;
+
+    const char*                     name;
 };
 
 struct Sampler

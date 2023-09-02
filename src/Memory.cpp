@@ -56,6 +56,19 @@ void* ResourcePool::access(u32 handle)
     return m_resource_chunks[handle];
 }
 
+bool ResourcePool::valid_handle(u32 handle)
+{
+    for(u32 _handle : m_free_indices)
+    {
+        if(handle == _handle)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void ResourcePool::parse_chunks(void* pool_start)
 {
     u32 offset = m_resource_chunks.size();

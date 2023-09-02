@@ -71,8 +71,7 @@ int main(int argc, char** argv)
     async_load_task.threadNum = task_scheduler.GetNumTaskThreads() - 1;
     task_scheduler.AddPinnedTask(&async_load_task);
 
-    std::string scene_name(argv[1]);
-
+    std::string scene_name = (argc > 1 ) ? argv[1] : "../scene.txt";
     std::vector<std::string> scene = read_file_to_vector(scene_name);
 
     Application app(1300, 1000);

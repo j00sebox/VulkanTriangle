@@ -5,6 +5,7 @@
 #include "Components.hpp"
 #include "Renderer.hpp"
 #include "Vertex.hpp"
+#include "ResourceLoader.hpp"
 
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>

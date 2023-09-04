@@ -60,14 +60,14 @@ Renderer::Renderer(GLFWwindow* window) :
 Renderer::~Renderer()
 {
     ImGui_ImplVulkan_Shutdown();
-    m_logical_device.destroyDescriptorPool(m_imgui_pool, nullptr);
+    logical_device.destroyDescriptorPool(m_imgui_pool, nullptr);
 
     for(i32 i = 0; i < s_max_frames_in_flight; ++i)
     {
         // sync objects
-        m_logical_device.destroySemaphore(m_image_available_semaphores[i], nullptr);
-        m_logical_device.destroySemaphore(m_render_finished_semaphores[i], nullptr);
-        m_logical_device.destroyFence(m_in_flight_fences[i], nullptr);
+        logical_device.destroySemaphore(m_image_available_semaphores[i], nullptr);
+        logical_device.destroySemaphore(m_render_finished_semaphores[i], nullptr);
+        logical_device.destroyFence(m_in_flight_fences[i], nullptr);
 
         // uniform buffers
 //        auto* buffer = static_cast<Buffer*>(m_buffer_pool.access(m_camera_buffers[i]));
@@ -79,31 +79,25 @@ Renderer::~Renderer()
         destroy_buffer(m_light_buffers[i]);
     }
 
-    m_logical_device.destroySemaphore(m_transfer_semaphore, nullptr);
-    m_logical_device.destroyFence(m_transfer_fence, nullptr);
-
-    destroy_buffer(m_transfer_buffer);
-
     destroy_texture(m_null_texture);
     destroy_sampler(m_default_sampler);
 
     cleanup_swapchain();
 
-    m_logical_device.destroyDescriptorPool(m_descriptor_pool, nullptr);
-    m_logical_device.destroyDescriptorSetLayout(m_descriptor_set_layout, nullptr);
-    m_logical_device.destroyDescriptorSetLayout(m_camera_data_layout, nullptr);
-    m_logical_device.destroyDescriptorSetLayout(m_texture_set_layout, nullptr);
+    logical_device.destroyDescriptorPool(m_descriptor_pool, nullptr);
+    logical_device.destroyDescriptorSetLayout(m_descriptor_set_layout, nullptr);
+    logical_device.destroyDescriptorSetLayout(m_camera_data_layout, nullptr);
+    logical_device.destroyDescriptorSetLayout(m_texture_set_layout, nullptr);
 
     vmaDestroyAllocator(m_allocator);
 
-    m_logical_device.destroyCommandPool(m_main_command_pool, nullptr);
-    m_logical_device.destroyCommandPool(m_transfer_command_pool, nullptr);
-    m_logical_device.destroyPipeline(m_graphics_pipeline, nullptr);
-    m_logical_device.destroyPipelineLayout(m_pipeline_layout, nullptr);
-    m_logical_device.destroyRenderPass(m_render_pass, nullptr);
+    logical_device.destroyCommandPool(m_main_command_pool, nullptr);
+    logical_device.destroyPipeline(m_graphics_pipeline, nullptr);
+    logical_device.destroyPipelineLayout(m_pipeline_layout, nullptr);
+    logical_device.destroyRenderPass(m_render_pass, nullptr);
 
     // devices don't interact directly with instances
-    m_logical_device.destroy();
+    logical_device.destroy();
 
     if (m_enable_validation_layers)
     {
@@ -326,22 +320,22 @@ void Renderer::init_device()
 
 
     // takes physical device to interface with, the queue and the usage info
-    if (m_physical_device.createDevice(&create_info, nullptr, &m_logical_device) != vk::Result::eSuccess)
+    if (m_physical_device.createDevice(&create_info, nullptr, &logical_device) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create logical device!");
     }
 
     // since we only set 1 queue we can just index at 0
-    m_logical_device.getQueue(indices.graphics_family.value(), 0, &m_graphics_queue);
-    m_logical_device.getQueue(indices.present_family.value(), 0, &m_present_queue);
-    m_logical_device.getQueue(indices.transfer_family.value(), 0, &m_transfer_queue);
+    logical_device.getQueue(indices.graphics_family.value(), 0, &m_graphics_queue);
+    logical_device.getQueue(indices.present_family.value(), 0, &m_present_queue);
+    logical_device.getQueue(indices.transfer_family.value(), 0, &m_transfer_queue);
 
     m_physical_device.getProperties(&m_device_properties);
 
     VmaAllocatorCreateInfo vma_info{};
     vma_info.vulkanApiVersion = m_device_properties.apiVersion;
     vma_info.physicalDevice = m_physical_device;
-    vma_info.device = m_logical_device;
+    vma_info.device = logical_device;
     vma_info.instance = m_instance;
 
     vmaCreateAllocator(&vma_info, &m_allocator);
@@ -352,12 +346,12 @@ void Renderer::begin_frame()
     // takes array of fences and waits for any and all fences
     // saying VK_TRUE means we want to wait for all fences
     // last param is the timeout which we basically disable
-    vk::Result result = m_logical_device.waitForFences(1, &m_in_flight_fences[m_current_frame], true, UINT64_MAX);
+    vk::Result result = logical_device.waitForFences(1, &m_in_flight_fences[m_current_frame], true, UINT64_MAX);
 
     // logical device and swapchain we want to get the image from
     // third param is timeout for image to become available
     // next 2 params are sync objects to be signaled when presentation engine is done with the image
-    result = m_logical_device.acquireNextImageKHR(m_swapchain, UINT64_MAX, m_image_available_semaphores[m_current_frame], nullptr, &m_image_index);
+    result = logical_device.acquireNextImageKHR(m_swapchain, UINT64_MAX, m_image_available_semaphores[m_current_frame], nullptr, &m_image_index);
 
     // if swapchain is not good we immediately recreate and try again in the next frame
     if(result == vk::Result::eErrorOutOfDateKHR)
@@ -368,7 +362,7 @@ void Renderer::begin_frame()
 
     // need to reset fences to unsignaled
     // but only reset if we are submitting work
-    result = m_logical_device.resetFences(1, &m_in_flight_fences[m_current_frame]);
+    result = logical_device.resetFences(1, &m_in_flight_fences[m_current_frame]);
 
    // update_uniform_buffer(m_current_frame);
 
@@ -535,26 +529,26 @@ void Renderer::create_image(u32 width, u32 height, vk::Format format, vk::ImageT
     // images used as textures don't really need to be multisampled
     image_info.samples = vk::SampleCountFlagBits::e1;
 
-    if(m_logical_device.createImage(&image_info, nullptr, &image) != vk::Result::eSuccess)
+    if(logical_device.createImage(&image_info, nullptr, &image) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create image!");
     }
 
     vk::MemoryRequirements memory_requirements;
 
-    m_logical_device.getImageMemoryRequirements(image, &memory_requirements);
+    logical_device.getImageMemoryRequirements(image, &memory_requirements);
 
     vk::MemoryAllocateInfo alloc_info{};
     alloc_info.sType = vk::StructureType::eMemoryAllocateInfo;
     alloc_info.allocationSize = memory_requirements.size;
     alloc_info.memoryTypeIndex = DeviceHelper::find_memory_type(memory_requirements.memoryTypeBits, properties, m_physical_device);
 
-    if(m_logical_device.allocateMemory(&alloc_info, nullptr, &image_memory) != vk::Result::eSuccess)
+    if(logical_device.allocateMemory(&alloc_info, nullptr, &image_memory) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to allocate image memory!");
     }
 
-    m_logical_device.bindImageMemory(image, image_memory, 0);
+    logical_device.bindImageMemory(image, image_memory, 0);
 }
 
 vk::ImageView Renderer::create_image_view(const vk::Image& image, vk::Format format, vk::ImageAspectFlags image_aspect)
@@ -584,7 +578,7 @@ vk::ImageView Renderer::create_image_view(const vk::Image& image, vk::Format for
     create_info.subresourceRange.layerCount = 1;
 
     vk::ImageView image_view;
-    if(m_logical_device.createImageView(&create_info, nullptr, &image_view) != vk::Result::eSuccess)
+    if(logical_device.createImageView(&create_info, nullptr, &image_view) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create image view!");
     }
@@ -750,7 +744,7 @@ u32 Renderer::create_sampler(const SamplerCreationInfo& sampler_creation)
     sampler_info.minLod = 0.f;
     sampler_info.maxLod = 0.f;
 
-    if(m_logical_device.createSampler(&sampler_info, nullptr, &sampler->vk_sampler) != vk::Result::eSuccess)
+    if(logical_device.createSampler(&sampler_info, nullptr, &sampler->vk_sampler) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create texture sampler!");
     }
@@ -769,7 +763,7 @@ u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &descriptor_set_creation.layout;
 
-    if(vk::Result result = m_logical_device.allocateDescriptorSets(&allocInfo, &descriptor_set->vk_descriptor_set); result != vk::Result::eSuccess)
+    if(vk::Result result = logical_device.allocateDescriptorSets(&allocInfo, &descriptor_set->vk_descriptor_set); result != vk::Result::eSuccess)
     {
         std::cout << (int)result << std::endl;
         throw std::runtime_error("failed to create descriptor set!");
@@ -804,7 +798,7 @@ u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_
                 descriptor_writes[i].pImageInfo = nullptr;
                 descriptor_writes[i].pTexelBufferView = nullptr;
 
-                m_logical_device.updateDescriptorSets(1, &descriptor_writes[i], 0, nullptr);
+                logical_device.updateDescriptorSets(1, &descriptor_writes[i], 0, nullptr);
 
                break;
             }
@@ -826,7 +820,7 @@ u32 Renderer::create_descriptor_set(const DescriptorSetCreationInfo& descriptor_
                 descriptor_writes[i].descriptorCount = 1; // how many array elements to update
                 descriptor_writes[i].pImageInfo = &descriptor_info;
 
-                m_logical_device.updateDescriptorSets(1, &descriptor_writes[i], 0, nullptr);
+                logical_device.updateDescriptorSets(1, &descriptor_writes[i], 0, nullptr);
 
                 break;
             }
@@ -882,7 +876,7 @@ vk::ShaderModule Renderer::create_shader_module(const std::vector<char>& code)
     create_info.pCode = reinterpret_cast<const unsigned*>(code.data());
 
     vk::ShaderModule shader_module;
-    if(m_logical_device.createShaderModule(&create_info, nullptr, &shader_module) != vk::Result::eSuccess)
+    if(logical_device.createShaderModule(&create_info, nullptr, &shader_module) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create shader module!");
     }
@@ -915,7 +909,7 @@ void Renderer::update_texture_set(u32* texture_handles, u32 num_textures)
         descriptor_write.descriptorCount = 1; // how many array elements to update
         descriptor_write.pImageInfo = &descriptor_info;
 
-        m_logical_device.updateDescriptorSets(1, &descriptor_write, 0, nullptr);
+        logical_device.updateDescriptorSets(1, &descriptor_write, 0, nullptr);
     }
 }
 
@@ -934,7 +928,7 @@ void Renderer::destroy_texture(u32 texture_handle)
     }
 
     auto* texture = static_cast<Texture*>(m_texture_pool.access(texture_handle));
-    m_logical_device.destroyImageView(texture->vk_image_view, nullptr);
+    logical_device.destroyImageView(texture->vk_image_view, nullptr);
     vmaDestroyImage(m_allocator, texture->vk_image, texture->vma_allocation);
     m_texture_pool.free(texture_handle);
     m_texture_map.erase(texture->name);
@@ -943,7 +937,7 @@ void Renderer::destroy_texture(u32 texture_handle)
 void Renderer::destroy_sampler(u32 sampler_handle)
 {
     auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(sampler_handle));
-    m_logical_device.destroySampler(sampler->vk_sampler, nullptr);
+    logical_device.destroySampler(sampler->vk_sampler, nullptr);
     m_sampler_pool.free(sampler_handle);
 }
 
@@ -1016,16 +1010,16 @@ void Renderer::init_swapchain()
     // if the swap chain becomes invalid during runtime (ex. window resize)
     create_info.oldSwapchain = VK_NULL_HANDLE;
 
-    if(m_logical_device.createSwapchainKHR(&create_info, nullptr, &m_swapchain) != vk::Result::eSuccess)
+    if(logical_device.createSwapchainKHR(&create_info, nullptr, &m_swapchain) != vk::Result::eSuccess)
     {
         throw std::runtime_error("unable to create swapchain!");
     }
 
     // we only specified a minimum amount of images to create, the implementation is capable of making more
-    vk::Result result = m_logical_device.getSwapchainImagesKHR(m_swapchain, &image_count, nullptr);
+    vk::Result result = logical_device.getSwapchainImagesKHR(m_swapchain, &image_count, nullptr);
     m_swapchain_images.resize(image_count);
 
-    result = m_logical_device.getSwapchainImagesKHR(m_swapchain, &image_count, m_swapchain_images.data());
+    result = logical_device.getSwapchainImagesKHR(m_swapchain, &image_count, m_swapchain_images.data());
 
     // need these for later
     m_swapchain_image_format = surface_format.format;
@@ -1112,7 +1106,7 @@ void Renderer::init_render_pass()
     render_pass_info.dependencyCount = 1;
     render_pass_info.pDependencies = &dependency;
 
-    if(m_logical_device.createRenderPass(&render_pass_info, nullptr, &m_render_pass) != vk::Result::eSuccess)
+    if(logical_device.createRenderPass(&render_pass_info, nullptr, &m_render_pass) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create render pass!");
     }
@@ -1141,7 +1135,7 @@ void Renderer::init_descriptor_sets()
     uniform_layout_info.bindingCount = 2;
     uniform_layout_info.pBindings = bindings;
 
-    if(m_logical_device.createDescriptorSetLayout(&uniform_layout_info, nullptr, &m_camera_data_layout) != vk::Result::eSuccess)
+    if(logical_device.createDescriptorSetLayout(&uniform_layout_info, nullptr, &m_camera_data_layout) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create descriptor set layout!");
     }
@@ -1211,7 +1205,7 @@ void Renderer::init_descriptor_sets()
 
     bindless_layout_create_info.pNext = &extended_info;
 
-    if(m_logical_device.createDescriptorSetLayout(&bindless_layout_create_info, nullptr, &m_texture_set_layout) != vk::Result::eSuccess)
+    if(logical_device.createDescriptorSetLayout(&bindless_layout_create_info, nullptr, &m_texture_set_layout) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create descriptor set layout!");
     }
@@ -1225,7 +1219,7 @@ void Renderer::init_descriptor_sets()
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &m_texture_set_layout;
 
-    if(vk::Result result = m_logical_device.allocateDescriptorSets(&allocInfo, &descriptor_set->vk_descriptor_set); result != vk::Result::eSuccess)
+    if(vk::Result result = logical_device.allocateDescriptorSets(&allocInfo, &descriptor_set->vk_descriptor_set); result != vk::Result::eSuccess)
     {
         std::cout << (int)result << std::endl;
         throw std::runtime_error("failed to create descriptor set!");
@@ -1269,7 +1263,7 @@ void Renderer::init_graphics_pipeline()
         }
     }
 
-    if(m_logical_device.createPipelineCache(&pipeline_cache_info, nullptr, &pipeline_cache) != vk::Result::eSuccess)
+    if(logical_device.createPipelineCache(&pipeline_cache_info, nullptr, &pipeline_cache) != vk::Result::eSuccess)
     {
         throw std::runtime_error("Failed to create pipeline cache!");
     }
@@ -1462,7 +1456,7 @@ void Renderer::init_graphics_pipeline()
     pipeline_layout_info.pushConstantRangeCount = 2;
     pipeline_layout_info.pPushConstantRanges = push_constant_ranges;
 
-    if(m_logical_device.createPipelineLayout(&pipeline_layout_info, nullptr, &m_pipeline_layout) != vk::Result::eSuccess)
+    if(logical_device.createPipelineLayout(&pipeline_layout_info, nullptr, &m_pipeline_layout) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create pipeline layout!");
     }
@@ -1497,7 +1491,7 @@ void Renderer::init_graphics_pipeline()
 
     // you can actually use this one function call to make multiple pipelines
     // the second param references a vk::PipelineCache object
-    if(m_logical_device.createGraphicsPipelines(pipeline_cache, 1, &pipeline_info, nullptr, &m_graphics_pipeline) != vk::Result::eSuccess)
+    if(logical_device.createGraphicsPipelines(pipeline_cache, 1, &pipeline_info, nullptr, &m_graphics_pipeline) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create graphics pipeline!");
     }
@@ -1506,14 +1500,14 @@ void Renderer::init_graphics_pipeline()
     {
         size_t cache_data_size = 0;
 
-        if(m_logical_device.getPipelineCacheData(pipeline_cache, &cache_data_size, nullptr) != vk::Result::eSuccess)
+        if(logical_device.getPipelineCacheData(pipeline_cache, &cache_data_size, nullptr) != vk::Result::eSuccess)
         {
             throw std::runtime_error("Failed to fetch pipeline cache data!");
         }
 
         void* cache_data = malloc(cache_data_size);
 
-        if(m_logical_device.getPipelineCacheData(pipeline_cache, &cache_data_size, cache_data) != vk::Result::eSuccess)
+        if(logical_device.getPipelineCacheData(pipeline_cache, &cache_data_size, cache_data) != vk::Result::eSuccess)
         {
             throw std::runtime_error("Failed to fetch pipeline cache data!");
         }
@@ -1522,9 +1516,9 @@ void Renderer::init_graphics_pipeline()
         free(cache_data);
     }
 
-    m_logical_device.destroyPipelineCache(pipeline_cache, nullptr);
-    m_logical_device.destroyShaderModule(vert_shader_module, nullptr);
-    m_logical_device.destroyShaderModule(frag_shader_module, nullptr);
+    logical_device.destroyPipelineCache(pipeline_cache, nullptr);
+    logical_device.destroyShaderModule(vert_shader_module, nullptr);
+    logical_device.destroyShaderModule(frag_shader_module, nullptr);
 }
 
 void Renderer::init_command_pools()
@@ -1544,17 +1538,12 @@ void Renderer::init_command_pools()
     // since we're recording commands for drawing we make it the graphics queue
     pool_info.queueFamilyIndex = queue_family_indices.graphics_family.value();
 
-    if(m_logical_device.createCommandPool(&pool_info, nullptr, &m_main_command_pool) != vk::Result::eSuccess)
+    if(logical_device.createCommandPool(&pool_info, nullptr, &m_main_command_pool) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create command pool!");
     }
 
     pool_info.queueFamilyIndex = queue_family_indices.transfer_family.value();
-
-    if(m_logical_device.createCommandPool(&pool_info, nullptr, &m_transfer_command_pool) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to create command pool!");
-    }
 }
 
 void Renderer::init_depth_resources()
@@ -1587,7 +1576,7 @@ void Renderer::init_framebuffers()
         framebuffer_info.height = m_swapchain_extent.height;
         framebuffer_info.layers = 1;
 
-        if(m_logical_device.createFramebuffer(&framebuffer_info, nullptr, &m_swapchain_framebuffers[i]) != vk::Result::eSuccess)
+        if(logical_device.createFramebuffer(&framebuffer_info, nullptr, &m_swapchain_framebuffers[i]) != vk::Result::eSuccess)
         {
             throw std::runtime_error("failed to create framebuffer!");
         }
@@ -1612,7 +1601,7 @@ void Renderer::init_descriptor_pools()
     pool_info.poolSizeCount = (u32)3;
     pool_info.pPoolSizes = pool_sizes;
 
-    if(m_logical_device.createDescriptorPool(&pool_info, nullptr, &m_descriptor_pool) != vk::Result::eSuccess)
+    if(logical_device.createDescriptorPool(&pool_info, nullptr, &m_descriptor_pool) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create descriptor pool!");
     }
@@ -1628,26 +1617,11 @@ void Renderer::init_command_buffers()
     alloc_info.level = vk::CommandBufferLevel::ePrimary;
     alloc_info.commandBufferCount = static_cast<u32>(m_main_command_buffers.size());
 
-    if(m_logical_device.allocateCommandBuffers(&alloc_info, m_main_command_buffers.data()) != vk::Result::eSuccess)
+    if(logical_device.allocateCommandBuffers(&alloc_info, m_main_command_buffers.data()) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to allocate command buffers!");
     }
 
-    alloc_info.commandPool = m_transfer_command_pool;
-    alloc_info.commandBufferCount = static_cast<u32>(m_transfer_command_buffers.size());
-
-    if(m_logical_device.allocateCommandBuffers(&alloc_info, m_transfer_command_buffers.data()) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to allocate command buffers!");
-    }
-
-    // TODO: find a home for this
-    // FIXME: magic numbers
-    m_transfer_buffer = create_buffer({
-        .usage = vk::BufferUsageFlagBits::eTransferSrc,
-        .size = 64 * 1024 * 1024, // 64MB
-        .persistent = true
-    });
 }
 
 void Renderer::init_sync_objects()
@@ -1663,23 +1637,13 @@ void Renderer::init_sync_objects()
 
     for(size_t i = 0; i < s_max_frames_in_flight; ++i)
     {
-        if(m_logical_device.createSemaphore(&semaphore_info, nullptr, &m_image_available_semaphores[i]) != vk::Result::eSuccess ||
-           m_logical_device.createSemaphore(&semaphore_info, nullptr, &m_render_finished_semaphores[i]) != vk::Result::eSuccess ||
-           m_logical_device.createFence(&fence_info, nullptr, &m_in_flight_fences[i]) != vk::Result::eSuccess
+        if(logical_device.createSemaphore(&semaphore_info, nullptr, &m_image_available_semaphores[i]) != vk::Result::eSuccess ||
+           logical_device.createSemaphore(&semaphore_info, nullptr, &m_render_finished_semaphores[i]) != vk::Result::eSuccess ||
+           logical_device.createFence(&fence_info, nullptr, &m_in_flight_fences[i]) != vk::Result::eSuccess
                 )
         {
             throw std::runtime_error("failed to create sync objects!");
         }
-    }
-
-    if (m_logical_device.createSemaphore(&semaphore_info, nullptr, &m_transfer_semaphore) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to create transfer semaphore!");
-    }
-
-    if(m_logical_device.createFence(&fence_info, nullptr, &m_transfer_fence) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to create transfer fence!");
     }
 }
 
@@ -1687,19 +1651,19 @@ void Renderer::cleanup_swapchain()
 {
     for(auto framebuffer : m_swapchain_framebuffers)
     {
-        m_logical_device.destroyFramebuffer(framebuffer, nullptr);
+        logical_device.destroyFramebuffer(framebuffer, nullptr);
     }
 
     for(auto image_view : m_swapchain_image_views)
     {
-        m_logical_device.destroyImageView(image_view, nullptr);
+        logical_device.destroyImageView(image_view, nullptr);
     }
 
-    m_logical_device.destroyImage(m_depth_image, nullptr);
-    m_logical_device.freeMemory(m_depth_image_memory);
-    m_logical_device.destroyImageView(m_depth_image_view, nullptr);
+    logical_device.destroyImage(m_depth_image, nullptr);
+    logical_device.freeMemory(m_depth_image_memory);
+    logical_device.destroyImageView(m_depth_image_view, nullptr);
 
-    m_logical_device.destroySwapchainKHR(m_swapchain, nullptr);
+    logical_device.destroySwapchainKHR(m_swapchain, nullptr);
 }
 
 void Renderer::init_imgui()
@@ -1726,7 +1690,7 @@ void Renderer::init_imgui()
     pool_info.poolSizeCount = std::size(pool_sizes);
     pool_info.pPoolSizes = pool_sizes;
 
-    if(m_logical_device.createDescriptorPool(&pool_info, nullptr, &m_imgui_pool) != vk::Result::eSuccess)
+    if(logical_device.createDescriptorPool(&pool_info, nullptr, &m_imgui_pool) != vk::Result::eSuccess)
     {
         throw std::runtime_error("Failed to create imgui descriptor pool!");
     }
@@ -1738,7 +1702,7 @@ void Renderer::init_imgui()
     ImGui_ImplVulkan_InitInfo init_info{};
     init_info.Instance = m_instance;
     init_info.PhysicalDevice = m_physical_device;
-    init_info.Device = m_logical_device;
+    init_info.Device = logical_device;
     init_info.Queue = m_graphics_queue;
     init_info.DescriptorPool = m_imgui_pool;
     init_info.MinImageCount = s_max_frames_in_flight;
@@ -1881,7 +1845,7 @@ vk::CommandBuffer Renderer::begin_single_time_commands()
     alloc_info.commandBufferCount = 1;
 
     vk::CommandBuffer command_buffer;
-    if(m_logical_device.allocateCommandBuffers(&alloc_info, &command_buffer) != vk::Result::eSuccess)
+    if(logical_device.allocateCommandBuffers(&alloc_info, &command_buffer) != vk::Result::eSuccess)
     {
         throw std::runtime_error("Failed to allocate command buffer for single time use!");
     }
@@ -1915,7 +1879,7 @@ void Renderer::end_single_time_commands(vk::CommandBuffer command_buffer)
     }
     m_graphics_queue.waitIdle();
 
-    m_logical_device.freeCommandBuffers(m_main_command_pool, 1, & command_buffer);
+    logical_device.freeCommandBuffers(m_main_command_pool, 1, & command_buffer);
 }
 
 bool Renderer::check_validation_layer_support()

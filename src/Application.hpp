@@ -5,6 +5,7 @@
 
 #include "Renderer.hpp"
 #include "Scene.hpp"
+#include "ResourceLoader.hpp"
 
 struct ModelParams
 {
@@ -21,13 +22,13 @@ public:
     void run();
     void load_scene(const std::vector<std::string>& scene);
     void load_model(ModelParams params);
-    void load_model(const char* file_name, const char* texture);
     void load_primitive(const char* primitive_name);
 
 private:
     Renderer* m_engine;
     GLFWwindow* m_window;
     Scene* m_scene;
+    ResourceLoader* resource_loader;
     bool m_running;
     float m_prev_time;
 

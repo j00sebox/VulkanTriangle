@@ -47,10 +47,17 @@ public:
     void configure_lighting(LightingData data);
     [[nodiscard]] LightingData get_light_data() const { return m_light_data; }
 
-    void wait_for_device_idle() { m_logical_device.waitIdle(); }
+    void wait_for_device_idle() const { logical_device.waitIdle(); }
 
     [[nodiscard]] const vk::DescriptorSetLayout& get_texture_layout() const { return m_texture_set_layout; }
     [[nodiscard]] u32 get_null_texture_handle() const { return m_null_texture; }
+
+    // allow multiple frames to be in-flight
+    // this means we allow a new frame to start being rendered without interfering with one being presented
+    // meaning we need multiple command buffers, semaphores and fences
+    static const u16 s_max_frames_in_flight = 3;
+
+    vk::Device logical_device;
 
 private:
     GLFWwindow* m_window;
@@ -60,7 +67,6 @@ private:
     vk::SurfaceKHR m_surface;
     vk::PhysicalDevice m_physical_device;
     vk::PhysicalDeviceProperties m_device_properties;
-    vk::Device m_logical_device;
     VmaAllocator m_allocator;
     PoolAllocator m_pool_allocator;
 
@@ -85,18 +91,11 @@ private:
 
     u32 m_image_index;
 
-    // allow multiple frames to be in-flight
-    // this means we allow a new frame to start being rendered without interfering with one being presented
-    // meaning we need multiple command buffers, semaphores and fences
-    static const u16 s_max_frames_in_flight = 3;
-
     // command pools manage the memory that is used to store the buffers and command buffers are allocated to them
     vk::CommandPool m_main_command_pool;
-    vk::CommandPool m_transfer_command_pool;
 
     // each frame need its own command buffer, semaphores and fence
     std::array<vk::CommandBuffer, s_max_frames_in_flight> m_main_command_buffers;
-    std::array<vk::CommandBuffer, s_max_frames_in_flight> m_transfer_command_buffers;
 
     // we want to use semaphores for swapchain operations since they happen on the GPU
     std::array<vk::Semaphore, s_max_frames_in_flight> m_image_available_semaphores;
@@ -106,9 +105,6 @@ private:
     // if the host need to know when the GPU had finished we need a fence
     // in signaled/unsignaled state
     std::array<vk::Fence, s_max_frames_in_flight> m_in_flight_fences;
-
-    vk::Semaphore m_transfer_semaphore;
-    vk::Fence m_transfer_fence;
 
     // queues
     vk::Queue m_graphics_queue;
@@ -128,9 +124,6 @@ private:
     // uniform buffers
     std::array<u32, s_max_frames_in_flight> m_camera_buffers;
     std::array<u32, s_max_frames_in_flight> m_light_buffers;
-
-    // buffer that will be used by the resource loading thread
-    u32 m_transfer_buffer;
 
     LightingData m_light_data;
 

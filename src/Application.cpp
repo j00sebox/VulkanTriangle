@@ -184,26 +184,6 @@ void Application::load_model(ModelParams params)
     std::cout << "Model loaded in " << timer.stop() << "ms\n";
 }
 
-void Application::load_model(const char* file_name, const char* texture)
-{
-    Timer timer;
-    ModelLoader loader(m_engine, file_name);
-
-    Mesh mesh{};
-    loader.load_mesh(mesh);
-
-    Material material{};
-    loader.load_material(material);
-
-    // TODO: remove later
-    glm::mat4 transform = glm::translate(glm::mat4(1.f), {0.f, 0.f, -2.f});
-    transform = glm::rotate(transform, glm::radians(90.f), {1.f, 0.f, 0.f});
-    transform = glm::scale(transform, {5.f, 5.f, 5.f});
-
-    m_scene->add_model({ .mesh = mesh, .material = material, .transform = transform });
-    std::cout << "Model loaded in " << timer.stop() << "ms\n";
-}
-
 void Application::load_primitive(const char* primitive_name)
 {
     Mesh mesh{};

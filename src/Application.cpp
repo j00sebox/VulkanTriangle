@@ -31,10 +31,17 @@ Application::Application(int width, int height)
     // glfwSetWindowUserPointer(m_window, this);
     // glfwSetFramebufferSizeCallback(m_window, framebuffer_resize_callback);
 
+    // create a task scheduler with 4 threads
+    enki::TaskSchedulerConfig scheduler_config;
+    scheduler_config.numTaskThreadsToCreate = 4;
+
+    m_scheduler = new enki::TaskScheduler();
+    m_scheduler->Initialize(scheduler_config);
+
     m_scene = new Scene();
     Input::m_window_handle = m_window;
     m_scene->camera.resize(width, height);
-    m_engine = new Renderer(m_window);
+    m_renderer = new Renderer(m_window, m_scheduler);
 
     std::cout << "Startup time: " << timer.stop() << "ms\n";
 }
@@ -44,21 +51,21 @@ Application::~Application()
     // TODO: remove later
     for(Model model : m_scene->models)
     {
-        m_engine->destroy_buffer(model.mesh.vertex_buffer);
-        m_engine->destroy_buffer(model.mesh.index_buffer);
+        m_renderer->destroy_buffer(model.mesh.vertex_buffer);
+        m_renderer->destroy_buffer(model.mesh.index_buffer);
 
         for(u32 texture : model.material.textures)
         {
-            if(texture != m_engine->get_null_texture_handle())
+            if(texture != m_renderer->get_null_texture_handle())
             {
-                m_engine->destroy_texture(texture);
+                m_renderer->destroy_texture(texture);
             }
         }
-        m_engine->destroy_sampler(model.material.sampler);
+        m_renderer->destroy_sampler(model.material.sampler);
     }
 
     delete m_scene;
-    delete m_engine;
+    delete m_renderer;
 
     glfwDestroyWindow(m_window);
     glfwTerminate();
@@ -96,7 +103,7 @@ void Application::run()
         {
             bool update_data = false;
 
-            LightingData data = m_engine->get_light_data();
+            LightingData data = m_renderer->get_light_data();
 
             glm::vec3 direct_light_colour = data.direct_light_colour;
             float colour2[3] = {
@@ -130,7 +137,7 @@ void Application::run()
 
             if(update_data)
             {
-                m_engine->configure_lighting({
+                m_renderer->configure_lighting({
                     .direct_light_colour = direct_light_colour,
                     .direct_light_position = data.direct_light_position
                 });
@@ -141,11 +148,11 @@ void Application::run()
 
         m_scene->update(get_delta_time());
         Timer timer;
-        m_engine->render(m_scene);
+        m_renderer->render(m_scene);
         render_time = timer.stop();
     }
 
-    m_engine->wait_for_device_idle();
+    m_renderer->wait_for_device_idle();
 }
 
 void Application::load_scene(const std::vector<std::string>& scene)
@@ -172,7 +179,7 @@ void Application::load_scene(const std::vector<std::string>& scene)
 void Application::load_model(ModelParams params)
 {
     Timer timer;
-    ModelLoader loader(m_engine, params.path);
+    ModelLoader loader(m_renderer, params.path);
 
     Mesh mesh{};
     loader.load_mesh(mesh);
@@ -188,8 +195,8 @@ void Application::load_primitive(const char* primitive_name)
 {
     Mesh mesh{};
     Material material{};
-    ModelLoader::load_primitive(m_engine, str_to_primitive_type(primitive_name), mesh);
-    ModelLoader::load_texture(m_engine, "../textures/white_on_white.jpeg", material);
+    ModelLoader::load_primitive(m_renderer, str_to_primitive_type(primitive_name), mesh);
+    ModelLoader::load_texture(m_renderer, "../textures/white_on_white.jpeg", material);
     m_scene->add_model({ .mesh = mesh, .material = material });
 }
 

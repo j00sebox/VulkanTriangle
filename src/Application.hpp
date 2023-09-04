@@ -25,9 +25,10 @@ public:
     void load_primitive(const char* primitive_name);
 
 private:
-    Renderer* m_engine;
+    Renderer* m_renderer;
     GLFWwindow* m_window;
     Scene* m_scene;
+    enki::TaskScheduler* m_scheduler;
     ResourceLoader* resource_loader;
     bool m_running;
     float m_prev_time;

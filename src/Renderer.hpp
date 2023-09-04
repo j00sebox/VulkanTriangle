@@ -1,13 +1,13 @@
 #pragma once
 #include "config.hpp"
-
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-
 #include "Scene.hpp"
 #include "GPUResources.hpp"
 #include "Memory.hpp"
 #include "Components.hpp"
+
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
+#include <TaskScheduler.h>
 
 struct LightingData
 {
@@ -18,14 +18,12 @@ struct LightingData
 class Renderer
 {
 public:
-    explicit Renderer(GLFWwindow* window);
+    explicit Renderer(GLFWwindow* window, enki::TaskScheduler* scheduler);
     ~Renderer();
 
     void render(Scene* scene);
     void begin_frame();
     void end_frame();
-    void start_renderpass(vk::CommandBuffer command_buffer, u32 image_index);
-    void end_renderpass(vk::CommandBuffer command_buffer);
     void recreate_swapchain();
 
     // resource creation
@@ -61,6 +59,7 @@ public:
 
 private:
     GLFWwindow* m_window;
+    enki::TaskScheduler* m_scheduler;
     vk::Instance m_instance;
     vk::DebugUtilsMessengerEXT m_debug_messenger;
     vk::DispatchLoaderDynamic m_dispatch_loader;
@@ -92,10 +91,10 @@ private:
     u32 m_image_index;
 
     // command pools manage the memory that is used to store the buffers and command buffers are allocated to them
-    vk::CommandPool m_main_command_pool;
+    std::vector<vk::CommandPool> m_command_pools;
 
     // each frame need its own command buffer, semaphores and fence
-    std::array<vk::CommandBuffer, s_max_frames_in_flight> m_main_command_buffers;
+    std::vector<vk::CommandBuffer> m_command_buffers;
 
     // we want to use semaphores for swapchain operations since they happen on the GPU
     std::array<vk::Semaphore, s_max_frames_in_flight> m_image_available_semaphores;
@@ -161,6 +160,9 @@ private:
 
     // keeps track of the current frame index
     u32 m_current_frame = 0;
+
+    // index of command buffer that is currently being written to
+    u32 m_current_cb_index = 0;
 
 #ifdef NDEBUG
     const bool m_enable_validation_layers = false;

@@ -40,6 +40,19 @@ namespace util
         file.close();
     }
 
+    std::vector<std::string> read_file_to_vector(const std::string& filename)
+    {
+        std::ifstream source;
+        source.open(filename);
+        std::vector<std::string> lines;
+        std::string line;
+        while (std::getline(source, line))
+        {
+            lines.push_back(line);
+        }
+        return lines;
+    }
+
     namespace spirv
     {
         // an id in spirv is a label used to refer to an object, type, a function, etc.

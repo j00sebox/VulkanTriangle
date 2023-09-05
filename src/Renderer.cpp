@@ -204,6 +204,8 @@ void Renderer::render(Scene* scene)
 //        // first instance
 //        m_command_buffers[m_current_cb_index + 1].drawIndexed(model.mesh.index_count, 1, 0, 0, 0);
 
+        m_command_buffers[m_current_cb_index].reset();
+
         vk::CommandBufferInheritanceInfo inheritance_info{};
         inheritance_info.renderPass = m_render_pass;
         inheritance_info.framebuffer = m_swapchain_framebuffers[m_image_index];
@@ -213,13 +215,10 @@ void Renderer::render(Scene* scene)
         secondary_begin_info.flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue | vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
         secondary_begin_info.pInheritanceInfo = &inheritance_info;
 
-        // FIXME
-        m_command_buffers[m_current_cb_index + 1].reset();
-
-        m_command_buffers[m_current_cb_index + 1].begin(secondary_begin_info);
+        m_command_buffers[m_current_cb_index].begin(secondary_begin_info);
 
         // second param specifies if the object is graphics or compute
-        m_command_buffers[m_current_cb_index + 1].bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphics_pipeline);
+        m_command_buffers[m_current_cb_index].bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphics_pipeline);
 
         // since we specified that the viewport and scissor were dynamic we need to do them now
         vk::Viewport viewport{};
@@ -229,24 +228,34 @@ void Renderer::render(Scene* scene)
         viewport.height = static_cast<float>(m_swapchain_extent.height);
         viewport.minDepth = 0.f;
         viewport.maxDepth = 1.f;
-        m_command_buffers[m_current_cb_index + 1].setViewport(0, 1, &viewport);
+        m_command_buffers[m_current_cb_index].setViewport(0, 1, &viewport);
 
         vk::Rect2D scissor{};
         scissor.offset = vk::Offset2D{0, 0};
         scissor.extent = m_swapchain_extent;
-        m_command_buffers[m_current_cb_index + 1].setScissor(0, 1, &scissor);
+        m_command_buffers[m_current_cb_index].setScissor(0, 1, &scissor);
 
-        record_draw_tasks[draw_task_index].init(this, &m_command_buffers[m_current_cb_index + 1], &model, camera_set, material_set);
+        record_draw_tasks[draw_task_index].init(this, &m_command_buffers[m_current_cb_index], &model, camera_set, material_set);
         m_scheduler->AddTaskSetToPipe(&record_draw_tasks[draw_task_index]);
 
         draw_task_index = (draw_task_index + 1) % 4;
 
-        m_current_cb_index = (m_current_cb_index + 3) % m_command_buffers.size();
+        m_current_cb_index += s_max_frames_in_flight;
     }
 
-    //ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), m_command_buffers[m_current_cb_index + 1]);
+    m_imgui_commands[m_current_frame].reset();
+    vk::CommandBufferInheritanceInfo inheritance_info{};
+    inheritance_info.renderPass = m_render_pass;
+    inheritance_info.framebuffer = m_swapchain_framebuffers[m_image_index];
+    inheritance_info.subpass = 0;
 
-    //m_command_buffers[m_current_cb_index + 1].end();
+    vk::CommandBufferBeginInfo secondary_begin_info{};
+    secondary_begin_info.flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue | vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+    secondary_begin_info.pInheritanceInfo = &inheritance_info;
+
+    m_imgui_commands[m_current_frame].begin(secondary_begin_info);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),  m_imgui_commands[m_current_frame]);
+    m_imgui_commands[m_current_frame].end();
 
     for(u32 i = 0; i < 4; ++i)
     {
@@ -257,11 +266,12 @@ void Renderer::render(Scene* scene)
             m_primary_command_buffers[m_current_frame].executeCommands(1, record_draw_tasks[i].command_buffer);
         }
     }
+    m_primary_command_buffers[m_current_frame].executeCommands(1, &m_imgui_commands[m_current_frame]);
 
     end_frame();
 
     m_current_frame = (m_current_frame + 1) % s_max_frames_in_flight;
-    m_current_cb_index = m_current_frame * m_command_pools.size();
+    m_current_cb_index = m_current_frame;
 }
 
 void Renderer::begin_frame()
@@ -288,7 +298,7 @@ void Renderer::begin_frame()
     result = logical_device.resetFences(1, &m_in_flight_fences[m_current_frame]);
 
     m_primary_command_buffers[m_current_frame].reset();
-//    for(u32 i = m_current_frame; i < m_scheduler->GetNumTaskThreads(); ++i)
+//    for(u32 i = 0; i < m_scheduler->GetNumTaskThreads(); ++i)
 //    {
 //        logical_device.resetCommandPool(m_command_pools[i]);
 //    }
@@ -1622,8 +1632,7 @@ void Renderer::init_command_pools()
         throw std::runtime_error("failed to create command pool!");
     }
 
-    u32 size = m_scheduler->GetNumTaskThreads() * s_max_frames_in_flight;
-    m_command_pools.resize(m_scheduler->GetNumTaskThreads() * s_max_frames_in_flight);
+    m_command_pools.resize(m_scheduler->GetNumTaskThreads());
 
     for(auto& command_pool : m_command_pools)
     {
@@ -1636,15 +1645,51 @@ void Renderer::init_command_pools()
     pool_info.queueFamilyIndex = queue_family_indices.transfer_family.value();
 }
 
-void Renderer::init_depth_resources()
+void Renderer::init_command_buffers()
 {
-    create_image(m_swapchain_extent.width, m_swapchain_extent.height,
-                 vk::Format::eD32Sfloat, vk::ImageTiling::eOptimal,
-                 vk::ImageUsageFlagBits::eDepthStencilAttachment,
-                 vk::MemoryPropertyFlagBits::eDeviceLocal,
-                 m_depth_image, m_depth_image_memory);
+    m_command_buffers.resize(m_command_pools.size() * 3);
 
-    m_depth_image_view = create_image_view(m_depth_image, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth);
+    vk::CommandBufferAllocateInfo alloc_info{};
+    alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
+    alloc_info.commandPool = m_main_command_pool;
+
+    // primary buffers can be submitted to a queue for execution but cannot be called from other command buffers
+    alloc_info.level = vk::CommandBufferLevel::ePrimary;
+    alloc_info.commandBufferCount = static_cast<u32>(m_primary_command_buffers.size());
+
+    if(logical_device.allocateCommandBuffers(&alloc_info, m_primary_command_buffers.data()) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to allocate command buffers!");
+    }
+
+    u32 command_buffer_index = 0;
+    for(const auto& command_pool : m_command_pools)
+    {
+        // now need to allocate the secondary command buffers for this pool
+        vk::CommandBufferAllocateInfo secondary_alloc_info{};
+        secondary_alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
+        secondary_alloc_info.commandPool = command_pool;
+        secondary_alloc_info.level = vk::CommandBufferLevel::eSecondary;
+        secondary_alloc_info.commandBufferCount = static_cast<u32>(s_max_frames_in_flight);
+
+        if(logical_device.allocateCommandBuffers(&secondary_alloc_info, m_command_buffers.data() + command_buffer_index) != vk::Result::eSuccess)
+        {
+            throw std::runtime_error("failed to allocate command buffers!");
+        }
+
+        command_buffer_index += 3;
+    }
+
+    vk::CommandBufferAllocateInfo imgui_alloc_info{};
+    imgui_alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
+    imgui_alloc_info.commandPool = m_main_command_pool;
+    imgui_alloc_info.level = vk::CommandBufferLevel::eSecondary;
+    imgui_alloc_info.commandBufferCount = static_cast<u32>(s_max_frames_in_flight);
+
+    if(logical_device.allocateCommandBuffers(&imgui_alloc_info, m_imgui_commands.data()) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to allocate command buffers!");
+    }
 }
 
 void Renderer::init_framebuffers()
@@ -1697,58 +1742,15 @@ void Renderer::init_descriptor_pools()
     }
 }
 
-void Renderer::init_command_buffers()
+void Renderer::init_depth_resources()
 {
-    m_command_buffers.resize(m_command_pools.size() * 3);
+    create_image(m_swapchain_extent.width, m_swapchain_extent.height,
+                 vk::Format::eD32Sfloat, vk::ImageTiling::eOptimal,
+                 vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                 vk::MemoryPropertyFlagBits::eDeviceLocal,
+                 m_depth_image, m_depth_image_memory);
 
-    vk::CommandBufferAllocateInfo alloc_info{};
-    alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
-    alloc_info.commandPool = m_main_command_pool;
-
-    // primary buffers can be submitted to a queue for execution but cannot be called from other command buffers
-    alloc_info.level = vk::CommandBufferLevel::ePrimary;
-    alloc_info.commandBufferCount = static_cast<u32>(m_primary_command_buffers.size());
-
-    if(logical_device.allocateCommandBuffers(&alloc_info, m_primary_command_buffers.data()) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to allocate command buffers!");
-    }
-
-    for(u32 i = 0; i < m_scheduler->GetNumTaskThreads(); ++i)
-    {
-        u32 command_buffer_index = 0;
-        for(auto command_pool : m_command_pools)
-        {
-            vk::CommandBufferAllocateInfo primary_alloc_info{};
-            primary_alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
-            primary_alloc_info.commandPool = command_pool;
-
-            // primary buffers can be submitted to a queue for execution but cannot be called from other command buffers
-            primary_alloc_info.level = vk::CommandBufferLevel::ePrimary;
-            primary_alloc_info.commandBufferCount = static_cast<u32>(1);
-
-            // FIXME: magic number
-            if(logical_device.allocateCommandBuffers(&primary_alloc_info, m_command_buffers.data() + command_buffer_index) != vk::Result::eSuccess)
-            {
-                throw std::runtime_error("failed to allocate command buffers!");
-            }
-
-            // now need to allocate the secondary command buffers for this pool
-            vk::CommandBufferAllocateInfo secondary_alloc_info{};
-            secondary_alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
-            secondary_alloc_info.commandPool = command_pool;
-            secondary_alloc_info.level = vk::CommandBufferLevel::eSecondary;
-            secondary_alloc_info.commandBufferCount = static_cast<u32>(2);
-
-            if(logical_device.allocateCommandBuffers(&secondary_alloc_info, m_command_buffers.data() + command_buffer_index + 1) != vk::Result::eSuccess)
-            {
-                throw std::runtime_error("failed to allocate command buffers!");
-            }
-
-            command_buffer_index += 3;
-        }
-    }
-
+    m_depth_image_view = create_image_view(m_depth_image, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth);
 }
 
 void Renderer::init_sync_objects()

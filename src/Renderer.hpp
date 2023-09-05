@@ -103,6 +103,7 @@ private:
     // each frame need its own command buffer, semaphores and fence
     std::array<vk::CommandBuffer, s_max_frames_in_flight> m_primary_command_buffers;
     std::vector<vk::CommandBuffer> m_command_buffers;
+    std::array<vk::CommandBuffer, s_max_frames_in_flight> m_imgui_commands;
 
     // we want to use semaphores for swapchain operations since they happen on the GPU
     std::array<vk::Semaphore, s_max_frames_in_flight> m_image_available_semaphores;

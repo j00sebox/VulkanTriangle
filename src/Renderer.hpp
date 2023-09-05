@@ -36,6 +36,12 @@ public:
     vk::ImageView create_image_view(const vk::Image& image, vk::Format format, vk::ImageAspectFlags image_aspect);
     vk::ShaderModule create_shader_module(const std::vector<char>& code);
 
+    Buffer* get_buffer(u32 buffer_handle) { return static_cast<Buffer*>(m_buffer_pool.access(buffer_handle)); }
+    DescriptorSet* get_descriptor_set(u32 descriptor_set_handle) { return static_cast<DescriptorSet*>(m_descriptor_set_pool.access(descriptor_set_handle)); }
+
+    u32 get_current_camera_set() { return m_camera_sets[m_current_frame]; }
+    const vk::PipelineLayout& get_pipeline_layout() { return m_pipeline_layout; }
+
     void update_texture_set(u32* texture_handles, u32 num_textures);
 
     void destroy_buffer(u32 buffer_handle);
@@ -91,9 +97,11 @@ private:
     u32 m_image_index;
 
     // command pools manage the memory that is used to store the buffers and command buffers are allocated to them
+    vk::CommandPool m_main_command_pool;
     std::vector<vk::CommandPool> m_command_pools;
 
     // each frame need its own command buffer, semaphores and fence
+    std::array<vk::CommandBuffer, s_max_frames_in_flight> m_primary_command_buffers;
     std::vector<vk::CommandBuffer> m_command_buffers;
 
     // we want to use semaphores for swapchain operations since they happen on the GPU

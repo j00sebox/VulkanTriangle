@@ -15,12 +15,48 @@
 
 struct RecordDrawTask : enki::ITaskSet
 {
-    void ExecuteRange(enki::TaskSetPartition range, uint32_t threadnum) override
+    void init(Renderer* _renderer, vk::CommandBuffer* _command_buffer, const Model* _model, DescriptorSet* _camera_data, DescriptorSet* _material_data)
     {
-
+        renderer = _renderer;
+        command_buffer = _command_buffer;
+        model = _model;
+        camera_data = _camera_data;
+        material_data = _material_data;
     }
 
+    void ExecuteRange(enki::TaskSetPartition range, uint32_t threadnum) override
+    {
+        // need to bind right descriptor sets before draw call
+        // descriptor sets are not unique to graphics pipelines
+        command_buffer->bindDescriptorSets(vk::PipelineBindPoint::eGraphics, renderer->get_pipeline_layout(), 1, 1, &material_data->vk_descriptor_set, 0, nullptr);
+        command_buffer->bindDescriptorSets(vk::PipelineBindPoint::eGraphics, renderer->get_pipeline_layout(), 0, 1, &camera_data->vk_descriptor_set, 0, nullptr);
+
+        command_buffer->pushConstants(renderer->get_pipeline_layout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model->transform);
+        command_buffer->pushConstants(renderer->get_pipeline_layout(), vk::ShaderStageFlagBits::eFragment, 64, sizeof(glm::uvec4), model->material.textures);
+
+        Buffer* vertex_buffer = renderer->get_buffer(model->mesh.vertex_buffer);
+        vk::Buffer vertex_buffers[] = {vertex_buffer->vk_buffer};
+        vk::DeviceSize offsets[] = {0};
+        command_buffer->bindVertexBuffers(0, 1, vertex_buffers, offsets);
+
+        Buffer* index_buffer = renderer->get_buffer(model->mesh.index_buffer);
+        command_buffer->bindIndexBuffer(index_buffer->vk_buffer, 0, vk::IndexType::eUint32);
+
+        // now we can issue the actual draw command
+        // index count
+        // instance count
+        // first index: offset into the vertex buffer
+        // first instance
+        command_buffer->drawIndexed(model->mesh.index_count, 1, 0, 0, 0);
+
+        command_buffer->end();
+    }
+
+    Renderer* renderer;
     vk::CommandBuffer* command_buffer;
+    const Model* model;
+    DescriptorSet* camera_data;
+    DescriptorSet* material_data;
 };
 
 
@@ -98,6 +134,7 @@ Renderer::~Renderer()
 
     vmaDestroyAllocator(m_allocator);
 
+    logical_device.destroyCommandPool(m_main_command_pool);
     for(auto& command_pool : m_command_pools)
     {
         logical_device.destroyCommandPool(command_pool, nullptr);
@@ -136,43 +173,95 @@ void Renderer::render(Scene* scene)
     begin_frame();
 
     auto* material_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(m_texture_set));
-    m_command_buffers[m_current_cb_index + 1].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 1, 1, &material_set->vk_descriptor_set, 0, nullptr);
+    auto* camera_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(m_camera_sets[m_current_frame]));
 
+    RecordDrawTask record_draw_tasks[4];
+
+    u32 draw_task_index = 0;
     for(const Model& model : scene->models)
     {
-        // need to bind right descriptor sets before draw call
-        // descriptor sets are not unique to graphics pipelines
-        auto* camera_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(m_camera_sets[m_current_frame]));
-        m_command_buffers[m_current_cb_index + 1].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0, 1, &camera_set->vk_descriptor_set, 0, nullptr);
+//        m_command_buffers[m_current_cb_index + 1].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 1, 1, &material_set->vk_descriptor_set, 0, nullptr);
+//
+//        // need to bind right descriptor sets before draw call
+//        // descriptor sets are not unique to graphics pipelines
+//        m_command_buffers[m_current_cb_index + 1].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0, 1, &camera_set->vk_descriptor_set, 0, nullptr);
+//
+//        m_command_buffers[m_current_cb_index + 1].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model.transform);
+//        m_command_buffers[m_current_cb_index + 1].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eFragment, 64, sizeof(glm::uvec4), model.material.textures);
+//
+//        auto* vertex_buffer = static_cast<Buffer*>(m_buffer_pool.access(model.mesh.vertex_buffer));
+//        vk::Buffer vertex_buffers[] = {vertex_buffer->vk_buffer};
+//        vk::DeviceSize offsets[] = {0};
+//        m_command_buffers[m_current_cb_index + 1].bindVertexBuffers(0, 1, vertex_buffers, offsets);
+//
+//        auto* index_buffer = static_cast<Buffer*>(m_buffer_pool.access(model.mesh.index_buffer));
+//        m_command_buffers[m_current_cb_index + 1].bindIndexBuffer(index_buffer->vk_buffer, 0, vk::IndexType::eUint32);
+//
+//        // now we can issue the actual draw command
+//        // index count
+//        // instance count
+//        // first index: offset into the vertex buffer
+//        // first instance
+//        m_command_buffers[m_current_cb_index + 1].drawIndexed(model.mesh.index_count, 1, 0, 0, 0);
 
-        m_command_buffers[m_current_cb_index + 1].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model.transform);
-        m_command_buffers[m_current_cb_index + 1].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eFragment, 64, sizeof(glm::uvec4), model.material.textures);
+        vk::CommandBufferInheritanceInfo inheritance_info{};
+        inheritance_info.renderPass = m_render_pass;
+        inheritance_info.framebuffer = m_swapchain_framebuffers[m_image_index];
+        inheritance_info.subpass = 0;
 
-        auto* vertex_buffer = static_cast<Buffer*>(m_buffer_pool.access(model.mesh.vertex_buffer));
-        vk::Buffer vertex_buffers[] = {vertex_buffer->vk_buffer};
-        vk::DeviceSize offsets[] = {0};
-        m_command_buffers[m_current_cb_index + 1].bindVertexBuffers(0, 1, vertex_buffers, offsets);
+        vk::CommandBufferBeginInfo secondary_begin_info{};
+        secondary_begin_info.flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue | vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+        secondary_begin_info.pInheritanceInfo = &inheritance_info;
 
-        auto* index_buffer = static_cast<Buffer*>(m_buffer_pool.access(model.mesh.index_buffer));
-        m_command_buffers[m_current_cb_index + 1].bindIndexBuffer(index_buffer->vk_buffer, 0, vk::IndexType::eUint32);
+        // FIXME
+        m_command_buffers[m_current_cb_index + 1].reset();
 
-        // now we can issue the actual draw command
-        // index count
-        // instance count
-        // first index: offset into the vertex buffer
-        // first instance
-        m_command_buffers[m_current_cb_index + 1].drawIndexed(model.mesh.index_count, 1, 0, 0, 0);
+        m_command_buffers[m_current_cb_index + 1].begin(secondary_begin_info);
+
+        // second param specifies if the object is graphics or compute
+        m_command_buffers[m_current_cb_index + 1].bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphics_pipeline);
+
+        // since we specified that the viewport and scissor were dynamic we need to do them now
+        vk::Viewport viewport{};
+        viewport.x = 0.f;
+        viewport.y = 0.f;
+        viewport.width = static_cast<float>(m_swapchain_extent.width);
+        viewport.height = static_cast<float>(m_swapchain_extent.height);
+        viewport.minDepth = 0.f;
+        viewport.maxDepth = 1.f;
+        m_command_buffers[m_current_cb_index + 1].setViewport(0, 1, &viewport);
+
+        vk::Rect2D scissor{};
+        scissor.offset = vk::Offset2D{0, 0};
+        scissor.extent = m_swapchain_extent;
+        m_command_buffers[m_current_cb_index + 1].setScissor(0, 1, &scissor);
+
+        record_draw_tasks[draw_task_index].init(this, &m_command_buffers[m_current_cb_index + 1], &model, camera_set, material_set);
+        m_scheduler->AddTaskSetToPipe(&record_draw_tasks[draw_task_index]);
+
+        draw_task_index = (draw_task_index + 1) % 4;
+
+        m_current_cb_index = (m_current_cb_index + 3) % m_command_buffers.size();
     }
 
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), m_command_buffers[m_current_cb_index + 1]);
+    //ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), m_command_buffers[m_current_cb_index + 1]);
 
-    m_command_buffers[m_current_cb_index + 1].end();
-    m_command_buffers[m_current_cb_index].executeCommands(1, m_command_buffers.data() + m_current_cb_index + 1);
+    //m_command_buffers[m_current_cb_index + 1].end();
+
+    for(u32 i = 0; i < 4; ++i)
+    {
+        m_scheduler->WaitforTask(&record_draw_tasks[i]);
+
+        if(record_draw_tasks[i].command_buffer)
+        {
+            m_primary_command_buffers[m_current_frame].executeCommands(1, record_draw_tasks[i].command_buffer);
+        }
+    }
 
     end_frame();
 
     m_current_frame = (m_current_frame + 1) % s_max_frames_in_flight;
-    m_current_cb_index = (m_current_cb_index + 3) % m_command_buffers.size();
+    m_current_cb_index = m_current_frame * m_command_pools.size();
 }
 
 void Renderer::begin_frame()
@@ -198,15 +287,17 @@ void Renderer::begin_frame()
     // but only reset if we are submitting work
     result = logical_device.resetFences(1, &m_in_flight_fences[m_current_frame]);
 
-    logical_device.resetCommandPool(m_command_pools[m_current_frame]);
-    //m_main_command_buffers[m_current_frame].reset();
-    //start_renderpass(m_main_command_buffers[m_current_frame], m_image_index);
+    m_primary_command_buffers[m_current_frame].reset();
+//    for(u32 i = m_current_frame; i < m_scheduler->GetNumTaskThreads(); ++i)
+//    {
+//        logical_device.resetCommandPool(m_command_pools[i]);
+//    }
 
     vk::CommandBufferBeginInfo begin_info{};
     begin_info.sType = vk::StructureType::eCommandBufferBeginInfo;
     begin_info.pInheritanceInfo = nullptr; // only relevant to secondary command buffers
 
-    if(m_command_buffers[m_current_cb_index].begin(&begin_info) != vk::Result::eSuccess)
+    if(m_primary_command_buffers[m_current_frame].begin(&begin_info) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to begin recording of framebuffer!");
     }
@@ -235,42 +326,13 @@ void Renderer::begin_frame()
     // all functions that record commands cna be recognized by their vk::Cmd prefix
     // they all return void, so no error handling until the recording is finished
     // we use inline since this is a primary command buffer
-    m_command_buffers[m_current_cb_index].beginRenderPass(&renderpass_info, vk::SubpassContents::eSecondaryCommandBuffers);
-
-    vk::CommandBufferInheritanceInfo inheritance_info{};
-    inheritance_info.renderPass = m_render_pass;
-    inheritance_info.framebuffer = m_swapchain_framebuffers[m_image_index];
-    inheritance_info.subpass = 0;
-
-    vk::CommandBufferBeginInfo secondary_begin_info{};
-    secondary_begin_info.flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue | vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-    secondary_begin_info.pInheritanceInfo = &inheritance_info;
-
-    m_command_buffers[m_current_cb_index + 1].begin(secondary_begin_info);
-
-    // second param specifies if the object is graphics or compute
-    m_command_buffers[m_current_cb_index + 1].bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphics_pipeline);
-
-    // since we specified that the viewport and scissor were dynamic we need to do them now
-    vk::Viewport viewport{};
-    viewport.x = 0.f;
-    viewport.y = 0.f;
-    viewport.width = static_cast<float>(m_swapchain_extent.width);
-    viewport.height = static_cast<float>(m_swapchain_extent.height);
-    viewport.minDepth = 0.f;
-    viewport.maxDepth = 1.f;
-    m_command_buffers[m_current_cb_index + 1].setViewport(0, 1, &viewport);
-
-    vk::Rect2D scissor{};
-    scissor.offset = vk::Offset2D{0, 0};
-    scissor.extent = m_swapchain_extent;
-    m_command_buffers[m_current_cb_index + 1].setScissor(0, 1, &scissor);
+    m_primary_command_buffers[m_current_frame].beginRenderPass(&renderpass_info, vk::SubpassContents::eSecondaryCommandBuffers);
 }
 
 void Renderer::end_frame()
 {
-    m_command_buffers[m_current_cb_index].endRenderPass();
-    m_command_buffers[m_current_cb_index].end();
+    m_primary_command_buffers[m_current_frame].endRenderPass();
+    m_primary_command_buffers[m_current_frame].end();
 
     vk::SubmitInfo submit_info{};
     submit_info.sType = vk::StructureType::eSubmitInfo;
@@ -284,7 +346,7 @@ void Renderer::end_frame()
 
     // which command buffers to submit
     submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &m_command_buffers[m_current_cb_index];
+    submit_info.pCommandBuffers = &m_primary_command_buffers[m_current_frame];
 
     // which semaphores to signal once the command buffer is finished
     vk::Semaphore signal_semaphores[] = {m_render_finished_semaphores[m_current_frame]};
@@ -1555,6 +1617,11 @@ void Renderer::init_command_pools()
     // since we're recording commands for drawing we make it the graphics queue
     pool_info.queueFamilyIndex = queue_family_indices.graphics_family.value();
 
+    if(logical_device.createCommandPool(&pool_info, nullptr, &m_main_command_pool) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to create command pool!");
+    }
+
     u32 size = m_scheduler->GetNumTaskThreads() * s_max_frames_in_flight;
     m_command_pools.resize(m_scheduler->GetNumTaskThreads() * s_max_frames_in_flight);
 
@@ -1634,37 +1701,54 @@ void Renderer::init_command_buffers()
 {
     m_command_buffers.resize(m_command_pools.size() * 3);
 
-    u32 command_buffer_index = 0;
-    for(auto command_pool : m_command_pools)
+    vk::CommandBufferAllocateInfo alloc_info{};
+    alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
+    alloc_info.commandPool = m_main_command_pool;
+
+    // primary buffers can be submitted to a queue for execution but cannot be called from other command buffers
+    alloc_info.level = vk::CommandBufferLevel::ePrimary;
+    alloc_info.commandBufferCount = static_cast<u32>(m_primary_command_buffers.size());
+
+    if(logical_device.allocateCommandBuffers(&alloc_info, m_primary_command_buffers.data()) != vk::Result::eSuccess)
     {
-        vk::CommandBufferAllocateInfo primary_alloc_info{};
-        primary_alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
-        primary_alloc_info.commandPool = command_pool;
-
-        // primary buffers can be submitted to a queue for execution but cannot be called from other command buffers
-        primary_alloc_info.level = vk::CommandBufferLevel::ePrimary;
-        primary_alloc_info.commandBufferCount = static_cast<u32>(1);
-
-        // FIXME: magic number
-        if(logical_device.allocateCommandBuffers(&primary_alloc_info, m_command_buffers.data() + command_buffer_index) != vk::Result::eSuccess)
-        {
-            throw std::runtime_error("failed to allocate command buffers!");
-        }
-
-        // now need to allocate the secondary command buffers for this pool
-        vk::CommandBufferAllocateInfo secondary_alloc_info{};
-        secondary_alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
-        secondary_alloc_info.commandPool = command_pool;
-        secondary_alloc_info.level = vk::CommandBufferLevel::eSecondary;
-        secondary_alloc_info.commandBufferCount = static_cast<u32>(2);
-
-        if(logical_device.allocateCommandBuffers(&secondary_alloc_info, m_command_buffers.data() + command_buffer_index + 1) != vk::Result::eSuccess)
-        {
-            throw std::runtime_error("failed to allocate command buffers!");
-        }
-
-        command_buffer_index += 3;
+        throw std::runtime_error("failed to allocate command buffers!");
     }
+
+    for(u32 i = 0; i < m_scheduler->GetNumTaskThreads(); ++i)
+    {
+        u32 command_buffer_index = 0;
+        for(auto command_pool : m_command_pools)
+        {
+            vk::CommandBufferAllocateInfo primary_alloc_info{};
+            primary_alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
+            primary_alloc_info.commandPool = command_pool;
+
+            // primary buffers can be submitted to a queue for execution but cannot be called from other command buffers
+            primary_alloc_info.level = vk::CommandBufferLevel::ePrimary;
+            primary_alloc_info.commandBufferCount = static_cast<u32>(1);
+
+            // FIXME: magic number
+            if(logical_device.allocateCommandBuffers(&primary_alloc_info, m_command_buffers.data() + command_buffer_index) != vk::Result::eSuccess)
+            {
+                throw std::runtime_error("failed to allocate command buffers!");
+            }
+
+            // now need to allocate the secondary command buffers for this pool
+            vk::CommandBufferAllocateInfo secondary_alloc_info{};
+            secondary_alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
+            secondary_alloc_info.commandPool = command_pool;
+            secondary_alloc_info.level = vk::CommandBufferLevel::eSecondary;
+            secondary_alloc_info.commandBufferCount = static_cast<u32>(2);
+
+            if(logical_device.allocateCommandBuffers(&secondary_alloc_info, m_command_buffers.data() + command_buffer_index + 1) != vk::Result::eSuccess)
+            {
+                throw std::runtime_error("failed to allocate command buffers!");
+            }
+
+            command_buffer_index += 3;
+        }
+    }
+
 }
 
 void Renderer::init_sync_objects()

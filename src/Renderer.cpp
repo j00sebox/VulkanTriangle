@@ -15,46 +15,53 @@
 
 struct RecordDrawTask : enki::ITaskSet
 {
-    void init(Renderer* _renderer, vk::CommandBuffer* _command_buffer, const Model* _model, DescriptorSet* _camera_data, DescriptorSet* _material_data)
+    void init(Renderer* _renderer, vk::CommandBuffer* _command_buffer, const Scene* _scene, u32 _start, u32 _end, DescriptorSet* _camera_data, DescriptorSet* _material_data)
     {
         renderer = _renderer;
         command_buffer = _command_buffer;
-        model = _model;
+        scene = _scene;
+        start = _start;
+        end = _end;
         camera_data = _camera_data;
         material_data = _material_data;
     }
 
     void ExecuteRange(enki::TaskSetPartition range, uint32_t threadnum) override
     {
-        // need to bind right descriptor sets before draw call
-        // descriptor sets are not unique to graphics pipelines
-        command_buffer->bindDescriptorSets(vk::PipelineBindPoint::eGraphics, renderer->get_pipeline_layout(), 1, 1, &material_data->vk_descriptor_set, 0, nullptr);
-        command_buffer->bindDescriptorSets(vk::PipelineBindPoint::eGraphics, renderer->get_pipeline_layout(), 0, 1, &camera_data->vk_descriptor_set, 0, nullptr);
+        for(u32 i = start; i < end; ++i)
+        {
+            // need to bind right descriptor sets before draw call
+            // descriptor sets are not unique to graphics pipelines
+            command_buffer->bindDescriptorSets(vk::PipelineBindPoint::eGraphics, renderer->get_pipeline_layout(), 1, 1, &material_data->vk_descriptor_set, 0, nullptr);
+            command_buffer->bindDescriptorSets(vk::PipelineBindPoint::eGraphics, renderer->get_pipeline_layout(), 0, 1, &camera_data->vk_descriptor_set, 0, nullptr);
 
-        command_buffer->pushConstants(renderer->get_pipeline_layout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model->transform);
-        command_buffer->pushConstants(renderer->get_pipeline_layout(), vk::ShaderStageFlagBits::eFragment, 64, sizeof(glm::uvec4), model->material.textures);
+            command_buffer->pushConstants(renderer->get_pipeline_layout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &scene->models[i].transform);
+            command_buffer->pushConstants(renderer->get_pipeline_layout(), vk::ShaderStageFlagBits::eFragment, 64, sizeof(glm::uvec4), scene->models[i].material.textures);
 
-        Buffer* vertex_buffer = renderer->get_buffer(model->mesh.vertex_buffer);
-        vk::Buffer vertex_buffers[] = {vertex_buffer->vk_buffer};
-        vk::DeviceSize offsets[] = {0};
-        command_buffer->bindVertexBuffers(0, 1, vertex_buffers, offsets);
+            Buffer* vertex_buffer = renderer->get_buffer(scene->models[i].mesh.vertex_buffer);
+            vk::Buffer vertex_buffers[] = {vertex_buffer->vk_buffer};
+            vk::DeviceSize offsets[] = {0};
+            command_buffer->bindVertexBuffers(0, 1, vertex_buffers, offsets);
 
-        Buffer* index_buffer = renderer->get_buffer(model->mesh.index_buffer);
-        command_buffer->bindIndexBuffer(index_buffer->vk_buffer, 0, vk::IndexType::eUint32);
+            Buffer* index_buffer = renderer->get_buffer(scene->models[i].mesh.index_buffer);
+            command_buffer->bindIndexBuffer(index_buffer->vk_buffer, 0, vk::IndexType::eUint32);
 
-        // now we can issue the actual draw command
-        // index count
-        // instance count
-        // first index: offset into the vertex buffer
-        // first instance
-        command_buffer->drawIndexed(model->mesh.index_count, 1, 0, 0, 0);
+            // now we can issue the actual draw command
+            // index count
+            // instance count
+            // first index: offset into the vertex buffer
+            // first instance
+            command_buffer->drawIndexed(scene->models[i].mesh.index_count, 1, 0, 0, 0);
 
-        command_buffer->end();
+            command_buffer->end();
+        }
     }
 
     Renderer* renderer;
     vk::CommandBuffer* command_buffer;
-    const Model* model;
+    const Scene* scene;
+    u32 start;
+    u32 end;
     DescriptorSet* camera_data;
     DescriptorSet* material_data;
 };
@@ -175,35 +182,12 @@ void Renderer::render(Scene* scene)
     auto* material_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(m_texture_set));
     auto* camera_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(m_camera_sets[m_current_frame]));
 
-    RecordDrawTask record_draw_tasks[4];
-
-    u32 draw_task_index = 0;
-    for(const Model& model : scene->models)
+    RecordDrawTask record_draw_tasks[m_scheduler->GetNumTaskThreads()];
+    u32 models_per_thread = (m_scheduler->GetNumTaskThreads() > scene->models.size()) ? 1 : (scene->models.size() / m_scheduler->GetNumTaskThreads());
+    u32 num_recordings = (m_scheduler->GetNumTaskThreads() > scene->models.size()) ? scene->models.size() : m_scheduler->GetNumTaskThreads();
+    
+    for(u32 i = 0; i < num_recordings; ++i)
     {
-//        m_command_buffers[m_current_cb_index + 1].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 1, 1, &material_set->vk_descriptor_set, 0, nullptr);
-//
-//        // need to bind right descriptor sets before draw call
-//        // descriptor sets are not unique to graphics pipelines
-//        m_command_buffers[m_current_cb_index + 1].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline_layout, 0, 1, &camera_set->vk_descriptor_set, 0, nullptr);
-//
-//        m_command_buffers[m_current_cb_index + 1].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &model.transform);
-//        m_command_buffers[m_current_cb_index + 1].pushConstants(m_pipeline_layout, vk::ShaderStageFlagBits::eFragment, 64, sizeof(glm::uvec4), model.material.textures);
-//
-//        auto* vertex_buffer = static_cast<Buffer*>(m_buffer_pool.access(model.mesh.vertex_buffer));
-//        vk::Buffer vertex_buffers[] = {vertex_buffer->vk_buffer};
-//        vk::DeviceSize offsets[] = {0};
-//        m_command_buffers[m_current_cb_index + 1].bindVertexBuffers(0, 1, vertex_buffers, offsets);
-//
-//        auto* index_buffer = static_cast<Buffer*>(m_buffer_pool.access(model.mesh.index_buffer));
-//        m_command_buffers[m_current_cb_index + 1].bindIndexBuffer(index_buffer->vk_buffer, 0, vk::IndexType::eUint32);
-//
-//        // now we can issue the actual draw command
-//        // index count
-//        // instance count
-//        // first index: offset into the vertex buffer
-//        // first instance
-//        m_command_buffers[m_current_cb_index + 1].drawIndexed(model.mesh.index_count, 1, 0, 0, 0);
-
         m_command_buffers[m_current_cb_index].reset();
 
         vk::CommandBufferInheritanceInfo inheritance_info{};
@@ -235,10 +219,8 @@ void Renderer::render(Scene* scene)
         scissor.extent = m_swapchain_extent;
         m_command_buffers[m_current_cb_index].setScissor(0, 1, &scissor);
 
-        record_draw_tasks[draw_task_index].init(this, &m_command_buffers[m_current_cb_index], &model, camera_set, material_set);
-        m_scheduler->AddTaskSetToPipe(&record_draw_tasks[draw_task_index]);
-
-        draw_task_index = (draw_task_index + 1) % 4;
+        record_draw_tasks[i].init(this, &m_command_buffers[m_current_cb_index], scene, i, i + models_per_thread, camera_set, material_set);
+        m_scheduler->AddTaskSetToPipe(&record_draw_tasks[i]);
 
         m_current_cb_index += s_max_frames_in_flight;
     }
@@ -257,7 +239,7 @@ void Renderer::render(Scene* scene)
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),  m_imgui_commands[m_current_frame]);
     m_imgui_commands[m_current_frame].end();
 
-    for(u32 i = 0; i < 4; ++i)
+    for(u32 i = 0; i < num_recordings; ++i)
     {
         m_scheduler->WaitforTask(&record_draw_tasks[i]);
 

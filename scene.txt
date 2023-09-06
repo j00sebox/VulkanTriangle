@@ -6,3 +6,43 @@
 -3 0 -2
 180 0 1 0
 1 1 1
+../models/bunny/scene.gltf
+1 0 -2
+90 1 0 0
+5 5 5
+../models/bunny/scene.gltf
+2 0 -2
+90 1 0 0
+5 5 5
+../models/bunny/scene.gltf
+3 0 -2
+90 1 0 0
+5 5 5
+../models/bunny/scene.gltf
+4 0 -2
+90 1 0 0
+5 5 5
+../models/ship_in_a_bottle/scene.gltf
+-5 0 -2
+180 0 1 0
+1 1 1
+../models/ship_in_a_bottle/scene.gltf
+-7 0 -2
+180 0 1 0
+1 1 1
+../models/ship_in_a_bottle/scene.gltf
+-9 0 -2
+180 0 1 0
+1 1 1
+../models/ship_in_a_bottle/scene.gltf
+-11 0 -2
+180 0 1 0
+1 1 1
+../models/bunny/scene.gltf
+5 0 -2
+90 1 0 0
+5 5 5
+../models/bunny/scene.gltf
+6 0 -2
+90 1 0 0
+5 5 5

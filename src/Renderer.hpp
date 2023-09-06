@@ -98,11 +98,13 @@ private:
 
     // command pools manage the memory that is used to store the buffers and command buffers are allocated to them
     vk::CommandPool m_main_command_pool;
+    vk::CommandPool m_extra_command_pool;
     std::vector<vk::CommandPool> m_command_pools;
 
     // each frame need its own command buffer, semaphores and fence
     std::array<vk::CommandBuffer, s_max_frames_in_flight> m_primary_command_buffers;
     std::vector<vk::CommandBuffer> m_command_buffers;
+    std::array<vk::CommandBuffer, s_max_frames_in_flight> m_extra_draw_commands;
     std::array<vk::CommandBuffer, s_max_frames_in_flight> m_imgui_commands;
 
     // we want to use semaphores for swapchain operations since they happen on the GPU
@@ -165,7 +167,7 @@ private:
     vk::CommandBuffer begin_single_time_commands();
     void end_single_time_commands(vk::CommandBuffer command_buffer);
 
-    std::unordered_map<const char*, u32> m_texture_map;
+    std::map<std::string, u32> m_texture_map;
 
     // keeps track of the current frame index
     u32 m_current_frame = 0;

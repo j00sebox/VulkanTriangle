@@ -52,9 +52,8 @@ struct RecordDrawTask : enki::ITaskSet
             // first index: offset into the vertex buffer
             // first instance
             command_buffer->drawIndexed(scene->models[i].mesh.index_count, 1, 0, 0, 0);
-
-            command_buffer->end();
         }
+        command_buffer->end();
     }
 
     Renderer* renderer;
@@ -142,6 +141,7 @@ Renderer::~Renderer()
     vmaDestroyAllocator(m_allocator);
 
     logical_device.destroyCommandPool(m_main_command_pool);
+    logical_device.destroyCommandPool(m_extra_command_pool);
     for(auto& command_pool : m_command_pools)
     {
         logical_device.destroyCommandPool(command_pool, nullptr);
@@ -185,7 +185,9 @@ void Renderer::render(Scene* scene)
     RecordDrawTask record_draw_tasks[m_scheduler->GetNumTaskThreads()];
     u32 models_per_thread = (m_scheduler->GetNumTaskThreads() > scene->models.size()) ? 1 : (scene->models.size() / m_scheduler->GetNumTaskThreads());
     u32 num_recordings = (m_scheduler->GetNumTaskThreads() > scene->models.size()) ? scene->models.size() : m_scheduler->GetNumTaskThreads();
-    
+    u32 surplus = scene->models.size() % m_scheduler->GetNumTaskThreads();
+
+    u32 start = 0;
     for(u32 i = 0; i < num_recordings; ++i)
     {
         m_command_buffers[m_current_cb_index].reset();
@@ -219,13 +221,13 @@ void Renderer::render(Scene* scene)
         scissor.extent = m_swapchain_extent;
         m_command_buffers[m_current_cb_index].setScissor(0, 1, &scissor);
 
-        record_draw_tasks[i].init(this, &m_command_buffers[m_current_cb_index], scene, i, i + models_per_thread, camera_set, material_set);
+        record_draw_tasks[i].init(this, &m_command_buffers[m_current_cb_index], scene, start, start + models_per_thread, camera_set, material_set);
         m_scheduler->AddTaskSetToPipe(&record_draw_tasks[i]);
 
+        start += models_per_thread;
         m_current_cb_index += s_max_frames_in_flight;
     }
 
-    m_imgui_commands[m_current_frame].reset();
     vk::CommandBufferInheritanceInfo inheritance_info{};
     inheritance_info.renderPass = m_render_pass;
     inheritance_info.framebuffer = m_swapchain_framebuffers[m_image_index];
@@ -235,6 +237,33 @@ void Renderer::render(Scene* scene)
     secondary_begin_info.flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue | vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
     secondary_begin_info.pInheritanceInfo = &inheritance_info;
 
+    RecordDrawTask extra_draws;
+
+    if(surplus > 0)
+    {
+        m_extra_draw_commands[m_current_frame].reset();
+        m_extra_draw_commands[m_current_frame].begin(secondary_begin_info);
+        m_extra_draw_commands[m_current_frame].bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphics_pipeline);
+
+        vk::Viewport viewport{};
+        viewport.x = 0.f;
+        viewport.y = 0.f;
+        viewport.width = static_cast<float>(m_swapchain_extent.width);
+        viewport.height = static_cast<float>(m_swapchain_extent.height);
+        viewport.minDepth = 0.f;
+        viewport.maxDepth = 1.f;
+        m_extra_draw_commands[m_current_frame].setViewport(0, 1, &viewport);
+
+        vk::Rect2D scissor{};
+        scissor.offset = vk::Offset2D{0, 0};
+        scissor.extent = m_swapchain_extent;
+        m_extra_draw_commands[m_current_frame].setScissor(0, 1, &scissor);
+
+        extra_draws.init(this, &m_extra_draw_commands[m_current_frame], scene, start, start + surplus, camera_set, material_set);
+        m_scheduler->AddTaskSetToPipe(&extra_draws);
+    }
+
+    m_imgui_commands[m_current_frame].reset();
     m_imgui_commands[m_current_frame].begin(secondary_begin_info);
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),  m_imgui_commands[m_current_frame]);
     m_imgui_commands[m_current_frame].end();
@@ -247,6 +276,11 @@ void Renderer::render(Scene* scene)
         {
             m_primary_command_buffers[m_current_frame].executeCommands(1, record_draw_tasks[i].command_buffer);
         }
+    }
+    if(surplus > 0)
+    {
+        m_scheduler->WaitforTask(&extra_draws);
+        m_primary_command_buffers[m_current_frame].executeCommands(1, extra_draws.command_buffer);
     }
     m_primary_command_buffers[m_current_frame].executeCommands(1, &m_imgui_commands[m_current_frame]);
 
@@ -1614,6 +1648,11 @@ void Renderer::init_command_pools()
         throw std::runtime_error("failed to create command pool!");
     }
 
+    if(logical_device.createCommandPool(&pool_info, nullptr, &m_extra_command_pool) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to create command pool!");
+    }
+
     m_command_pools.resize(m_scheduler->GetNumTaskThreads());
 
     for(auto& command_pool : m_command_pools)
@@ -1662,13 +1701,20 @@ void Renderer::init_command_buffers()
         command_buffer_index += 3;
     }
 
+    vk::CommandBufferAllocateInfo extra_alloc_info{};
+    extra_alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
+    extra_alloc_info.commandPool = m_extra_command_pool;
+    extra_alloc_info.level = vk::CommandBufferLevel::eSecondary;
+    extra_alloc_info.commandBufferCount = static_cast<u32>(s_max_frames_in_flight);
+
     vk::CommandBufferAllocateInfo imgui_alloc_info{};
     imgui_alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
     imgui_alloc_info.commandPool = m_main_command_pool;
     imgui_alloc_info.level = vk::CommandBufferLevel::eSecondary;
     imgui_alloc_info.commandBufferCount = static_cast<u32>(s_max_frames_in_flight);
 
-    if(logical_device.allocateCommandBuffers(&imgui_alloc_info, m_imgui_commands.data()) != vk::Result::eSuccess)
+    if(logical_device.allocateCommandBuffers(&extra_alloc_info, m_extra_draw_commands.data()) != vk::Result::eSuccess ||
+        logical_device.allocateCommandBuffers(&imgui_alloc_info, m_imgui_commands.data()) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to allocate command buffers!");
     }

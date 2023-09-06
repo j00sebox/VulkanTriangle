@@ -23,4 +23,6 @@ list(APPEND SOURCE_FILES
         ${CMAKE_CURRENT_LIST_DIR}/Primitives.cpp
         ${CMAKE_CURRENT_LIST_DIR}/Timer.hpp
         ${CMAKE_CURRENT_LIST_DIR}/Timer.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/CommandBuffer.hpp
+        ${CMAKE_CURRENT_LIST_DIR}/CommandBuffer.cpp
 )

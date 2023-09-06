@@ -4,6 +4,7 @@
 #include "GPUResources.hpp"
 #include "Memory.hpp"
 #include "Components.hpp"
+#include "CommandBuffer.hpp"
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -39,22 +40,19 @@ public:
     Buffer* get_buffer(u32 buffer_handle) { return static_cast<Buffer*>(m_buffer_pool.access(buffer_handle)); }
     DescriptorSet* get_descriptor_set(u32 descriptor_set_handle) { return static_cast<DescriptorSet*>(m_descriptor_set_pool.access(descriptor_set_handle)); }
 
-    u32 get_current_camera_set() { return m_camera_sets[m_current_frame]; }
-    const vk::PipelineLayout& get_pipeline_layout() { return m_pipeline_layout; }
-
     void update_texture_set(u32* texture_handles, u32 num_textures);
 
     void destroy_buffer(u32 buffer_handle);
-    void destroy_texture(u32 texture_handle);
-    void destroy_sampler(u32 sampler_handle);
-
+	void destroy_texture(u32 texture_handle);
+	void destroy_sampler(u32 sampler_handle);
     void configure_lighting(LightingData data);
-    [[nodiscard]] LightingData get_light_data() const { return m_light_data; }
 
+	[[nodiscard]] LightingData get_light_data() const { return m_light_data; }
     void wait_for_device_idle() const { logical_device.waitIdle(); }
 
     [[nodiscard]] const vk::DescriptorSetLayout& get_texture_layout() const { return m_texture_set_layout; }
-    [[nodiscard]] u32 get_null_texture_handle() const { return m_null_texture; }
+	[[nodiscard]] u32 get_null_texture_handle() const { return m_null_texture; }
+	const vk::PipelineLayout& get_pipeline_layout() { return m_pipeline_layout; }
 
     // allow multiple frames to be in-flight
     // this means we allow a new frame to start being rendered without interfering with one being presented
@@ -105,7 +103,7 @@ private:
     std::array<vk::CommandBuffer, s_max_frames_in_flight> m_primary_command_buffers;
     std::vector<vk::CommandBuffer> m_command_buffers;
     std::array<vk::CommandBuffer, s_max_frames_in_flight> m_extra_draw_commands;
-    std::array<vk::CommandBuffer, s_max_frames_in_flight> m_imgui_commands;
+    std::array<CommandBuffer, s_max_frames_in_flight> m_imgui_commands;
 
     // we want to use semaphores for swapchain operations since they happen on the GPU
     std::array<vk::Semaphore, s_max_frames_in_flight> m_image_available_semaphores;

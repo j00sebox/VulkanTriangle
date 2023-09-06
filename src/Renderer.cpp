@@ -187,15 +187,15 @@ void Renderer::render(Scene* scene)
     u32 num_recordings = (m_scheduler->GetNumTaskThreads() > scene->models.size()) ? scene->models.size() : m_scheduler->GetNumTaskThreads();
     u32 surplus = scene->models.size() % m_scheduler->GetNumTaskThreads();
 
+	vk::CommandBufferInheritanceInfo inheritance_info{};
+	inheritance_info.renderPass = m_render_pass;
+	inheritance_info.framebuffer = m_swapchain_framebuffers[m_image_index];
+	inheritance_info.subpass = 0;
+
     u32 start = 0;
     for(u32 i = 0; i < num_recordings; ++i)
     {
         m_command_buffers[m_current_cb_index].reset();
-
-        vk::CommandBufferInheritanceInfo inheritance_info{};
-        inheritance_info.renderPass = m_render_pass;
-        inheritance_info.framebuffer = m_swapchain_framebuffers[m_image_index];
-        inheritance_info.subpass = 0;
 
         vk::CommandBufferBeginInfo secondary_begin_info{};
         secondary_begin_info.flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue | vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
@@ -228,11 +228,6 @@ void Renderer::render(Scene* scene)
         m_current_cb_index += s_max_frames_in_flight;
     }
 
-    vk::CommandBufferInheritanceInfo inheritance_info{};
-    inheritance_info.renderPass = m_render_pass;
-    inheritance_info.framebuffer = m_swapchain_framebuffers[m_image_index];
-    inheritance_info.subpass = 0;
-
     vk::CommandBufferBeginInfo secondary_begin_info{};
     secondary_begin_info.flags = vk::CommandBufferUsageFlagBits::eRenderPassContinue | vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
     secondary_begin_info.pInheritanceInfo = &inheritance_info;
@@ -263,9 +258,8 @@ void Renderer::render(Scene* scene)
         m_scheduler->AddTaskSetToPipe(&extra_draws);
     }
 
-    m_imgui_commands[m_current_frame].reset();
-    m_imgui_commands[m_current_frame].begin(secondary_begin_info);
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),  m_imgui_commands[m_current_frame]);
+    m_imgui_commands[m_current_frame].begin(inheritance_info);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),  m_imgui_commands[m_current_frame].vk_command_buffer);
     m_imgui_commands[m_current_frame].end();
 
     for(u32 i = 0; i < num_recordings; ++i)
@@ -282,7 +276,7 @@ void Renderer::render(Scene* scene)
         m_scheduler->WaitforTask(&extra_draws);
         m_primary_command_buffers[m_current_frame].executeCommands(1, extra_draws.command_buffer);
     }
-    m_primary_command_buffers[m_current_frame].executeCommands(1, &m_imgui_commands[m_current_frame]);
+    m_primary_command_buffers[m_current_frame].executeCommands(1, &m_imgui_commands[m_current_frame].vk_command_buffer);
 
     end_frame();
 
@@ -1711,10 +1705,17 @@ void Renderer::init_command_buffers()
     imgui_alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
     imgui_alloc_info.commandPool = m_main_command_pool;
     imgui_alloc_info.level = vk::CommandBufferLevel::eSecondary;
-    imgui_alloc_info.commandBufferCount = static_cast<u32>(s_max_frames_in_flight);
+    imgui_alloc_info.commandBufferCount = static_cast<u32>(1);
 
-    if(logical_device.allocateCommandBuffers(&extra_alloc_info, m_extra_draw_commands.data()) != vk::Result::eSuccess ||
-        logical_device.allocateCommandBuffers(&imgui_alloc_info, m_imgui_commands.data()) != vk::Result::eSuccess)
+	for(u32 i = 0; i < s_max_frames_in_flight; ++i)
+	{
+		if (logical_device.allocateCommandBuffers(&imgui_alloc_info, &m_imgui_commands[i].vk_command_buffer) != vk::Result::eSuccess)
+		{
+			throw std::runtime_error("failed to allocate command buffers!");
+		}
+	}
+
+    if(logical_device.allocateCommandBuffers(&extra_alloc_info, m_extra_draw_commands.data()) != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to allocate command buffers!");
     }

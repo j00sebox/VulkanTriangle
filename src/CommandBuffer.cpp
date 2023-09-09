@@ -7,7 +7,10 @@ void CommandBuffer::begin()
 	begin_info.sType = vk::StructureType::eCommandBufferBeginInfo;
 	begin_info.pInheritanceInfo = nullptr; // only relevant to secondary command buffers
 
-	vk_command_buffer.begin(begin_info);
+	if (vk_command_buffer.begin(&begin_info)!= vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to begin recording of framebuffer!");
+    }
 	m_is_recording = true;
 }
 
@@ -22,6 +25,11 @@ void CommandBuffer::begin(vk::CommandBufferInheritanceInfo inheritance_info)
 	vk_command_buffer.begin(secondary_begin_info);
 
 	m_is_recording = true;
+}
+
+void CommandBuffer::begin_renderpass(vk::RenderPassBeginInfo renderpass_begin_info, vk::SubpassContents subpass_contents)
+{
+    vk_command_buffer.beginRenderPass(&renderpass_begin_info, subpass_contents);
 }
 
 void CommandBuffer::bind_pipeline(vk::Pipeline pipeline)

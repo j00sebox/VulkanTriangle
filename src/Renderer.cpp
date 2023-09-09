@@ -268,15 +268,15 @@ void Renderer::render(Scene* scene)
 
         if(record_draw_tasks[i].command_buffer)
         {
-            m_primary_command_buffers[m_current_frame].executeCommands(1, record_draw_tasks[i].command_buffer);
+            m_primary_command_buffers[m_current_frame].vk_command_buffer.executeCommands(1, record_draw_tasks[i].command_buffer);
         }
     }
     if(surplus > 0)
     {
         m_scheduler->WaitforTask(&extra_draws);
-        m_primary_command_buffers[m_current_frame].executeCommands(1, extra_draws.command_buffer);
+        m_primary_command_buffers[m_current_frame].vk_command_buffer.executeCommands(1, extra_draws.command_buffer);
     }
-    m_primary_command_buffers[m_current_frame].executeCommands(1, &m_imgui_commands[m_current_frame].vk_command_buffer);
+    m_primary_command_buffers[m_current_frame].vk_command_buffer.executeCommands(1, &m_imgui_commands[m_current_frame].vk_command_buffer);
 
     end_frame();
 
@@ -307,20 +307,20 @@ void Renderer::begin_frame()
     // but only reset if we are submitting work
     result = logical_device.resetFences(1, &m_in_flight_fences[m_current_frame]);
 
-    m_primary_command_buffers[m_current_frame].reset();
+    m_primary_command_buffers[m_current_frame].begin();
 //    for(u32 i = 0; i < m_scheduler->GetNumTaskThreads(); ++i)
 //    {
 //        logical_device.resetCommandPool(m_command_pools[i]);
 //    }
 
-    vk::CommandBufferBeginInfo begin_info{};
-    begin_info.sType = vk::StructureType::eCommandBufferBeginInfo;
-    begin_info.pInheritanceInfo = nullptr; // only relevant to secondary command buffers
-
-    if(m_primary_command_buffers[m_current_frame].begin(&begin_info) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to begin recording of framebuffer!");
-    }
+//    vk::CommandBufferBeginInfo begin_info{};
+//    begin_info.sType = vk::StructureType::eCommandBufferBeginInfo;
+//    begin_info.pInheritanceInfo = nullptr; // only relevant to secondary command buffers
+//
+//    if(m_primary_command_buffers[m_current_frame].begin(&begin_info) != vk::Result::eSuccess)
+//    {
+//        throw std::runtime_error("failed to begin recording of framebuffer!");
+//    }
 
     vk::RenderPassBeginInfo renderpass_info{};
     renderpass_info.sType = vk::StructureType::eRenderPassBeginInfo;
@@ -343,15 +343,18 @@ void Renderer::begin_frame()
     renderpass_info.clearValueCount = static_cast<unsigned>(clear_values.size());
     renderpass_info.pClearValues = clear_values.data();
 
+
+
     // all functions that record commands cna be recognized by their vk::Cmd prefix
     // they all return void, so no error handling until the recording is finished
     // we use inline since this is a primary command buffer
-    m_primary_command_buffers[m_current_frame].beginRenderPass(&renderpass_info, vk::SubpassContents::eSecondaryCommandBuffers);
+    m_primary_command_buffers[m_current_frame].begin_renderpass(renderpass_info, vk::SubpassContents::eSecondaryCommandBuffers);
+    //m_primary_command_buffers[m_current_frame].beginRenderPass(&renderpass_info, vk::SubpassContents::eSecondaryCommandBuffers);
 }
 
 void Renderer::end_frame()
 {
-    m_primary_command_buffers[m_current_frame].endRenderPass();
+    m_primary_command_buffers[m_current_frame].vk_command_buffer.endRenderPass();
     m_primary_command_buffers[m_current_frame].end();
 
     vk::SubmitInfo submit_info{};
@@ -366,7 +369,7 @@ void Renderer::end_frame()
 
     // which command buffers to submit
     submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &m_primary_command_buffers[m_current_frame];
+    submit_info.pCommandBuffers = &m_primary_command_buffers[m_current_frame].vk_command_buffer;
 
     // which semaphores to signal once the command buffer is finished
     vk::Semaphore signal_semaphores[] = {m_render_finished_semaphores[m_current_frame]};
@@ -1664,19 +1667,6 @@ void Renderer::init_command_buffers()
 {
     m_command_buffers.resize(m_command_pools.size() * 3);
 
-    vk::CommandBufferAllocateInfo alloc_info{};
-    alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
-    alloc_info.commandPool = m_main_command_pool;
-
-    // primary buffers can be submitted to a queue for execution but cannot be called from other command buffers
-    alloc_info.level = vk::CommandBufferLevel::ePrimary;
-    alloc_info.commandBufferCount = static_cast<u32>(m_primary_command_buffers.size());
-
-    if(logical_device.allocateCommandBuffers(&alloc_info, m_primary_command_buffers.data()) != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to allocate command buffers!");
-    }
-
     u32 command_buffer_index = 0;
     for(const auto& command_pool : m_command_pools)
     {
@@ -1695,6 +1685,14 @@ void Renderer::init_command_buffers()
         command_buffer_index += 3;
     }
 
+    vk::CommandBufferAllocateInfo primary_alloc_info{};
+    primary_alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
+    primary_alloc_info.commandPool = m_main_command_pool;
+
+    // primary buffers can be submitted to a queue for execution but cannot be called from other command buffers
+    primary_alloc_info.level = vk::CommandBufferLevel::ePrimary;
+    primary_alloc_info.commandBufferCount = 1;
+
     vk::CommandBufferAllocateInfo extra_alloc_info{};
     extra_alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
     extra_alloc_info.commandPool = m_extra_command_pool;
@@ -1705,11 +1703,12 @@ void Renderer::init_command_buffers()
     imgui_alloc_info.sType = vk::StructureType::eCommandBufferAllocateInfo;
     imgui_alloc_info.commandPool = m_main_command_pool;
     imgui_alloc_info.level = vk::CommandBufferLevel::eSecondary;
-    imgui_alloc_info.commandBufferCount = static_cast<u32>(1);
+    imgui_alloc_info.commandBufferCount = 1;
 
 	for(u32 i = 0; i < s_max_frames_in_flight; ++i)
 	{
-		if (logical_device.allocateCommandBuffers(&imgui_alloc_info, &m_imgui_commands[i].vk_command_buffer) != vk::Result::eSuccess)
+		if (logical_device.allocateCommandBuffers(&primary_alloc_info, &m_primary_command_buffers[i].vk_command_buffer) != vk::Result::eSuccess ||
+        logical_device.allocateCommandBuffers(&imgui_alloc_info, &m_imgui_commands[i].vk_command_buffer) != vk::Result::eSuccess)
 		{
 			throw std::runtime_error("failed to allocate command buffers!");
 		}

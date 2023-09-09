@@ -100,7 +100,7 @@ private:
     std::vector<vk::CommandPool> m_command_pools;
 
     // each frame need its own command buffer, semaphores and fence
-    std::array<vk::CommandBuffer, s_max_frames_in_flight> m_primary_command_buffers;
+    std::array<CommandBuffer, s_max_frames_in_flight> m_primary_command_buffers;
     std::vector<vk::CommandBuffer> m_command_buffers;
     std::array<vk::CommandBuffer, s_max_frames_in_flight> m_extra_draw_commands;
     std::array<CommandBuffer, s_max_frames_in_flight> m_imgui_commands;

@@ -7,6 +7,7 @@ struct CommandBuffer
 {
 	void begin();
 	void begin(vk::CommandBufferInheritanceInfo inheritance_info);
+    void begin_renderpass(vk::RenderPassBeginInfo renderpass_begin_info, vk::SubpassContents subpass_contents);
 	void bind_pipeline(vk::Pipeline pipeline);
 	void set_viewport(u32 width, u32 height);
 	void set_scissor(vk::Extent2D extent);

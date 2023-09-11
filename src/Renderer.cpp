@@ -183,9 +183,20 @@ void Renderer::render(Scene* scene)
     auto* camera_set = static_cast<DescriptorSet*>(m_descriptor_set_pool.access(m_camera_sets[m_current_frame]));
 
     RecordDrawTask record_draw_tasks[m_scheduler->GetNumTaskThreads()];
-    u32 models_per_thread = (m_scheduler->GetNumTaskThreads() > scene->models.size()) ? 1 : (scene->models.size() / m_scheduler->GetNumTaskThreads());
-    u32 num_recordings = (m_scheduler->GetNumTaskThreads() > scene->models.size()) ? scene->models.size() : m_scheduler->GetNumTaskThreads();
-    u32 surplus = scene->models.size() % m_scheduler->GetNumTaskThreads();
+    u32 models_per_thread, num_recordings, surplus;
+
+    if (m_scheduler->GetNumTaskThreads() > scene->models.size())
+    {
+        models_per_thread = 1;
+        num_recordings = scene->models.size();
+        surplus = 0;
+    }
+    else
+    {
+        models_per_thread = scene->models.size() / m_scheduler->GetNumTaskThreads();
+        num_recordings = m_scheduler->GetNumTaskThreads();
+        surplus = scene->models.size() % m_scheduler->GetNumTaskThreads();
+    }
 
 	vk::CommandBufferInheritanceInfo inheritance_info{};
 	inheritance_info.renderPass = m_render_pass;
@@ -313,48 +324,15 @@ void Renderer::begin_frame()
 //        logical_device.resetCommandPool(m_command_pools[i]);
 //    }
 
-//    vk::CommandBufferBeginInfo begin_info{};
-//    begin_info.sType = vk::StructureType::eCommandBufferBeginInfo;
-//    begin_info.pInheritanceInfo = nullptr; // only relevant to secondary command buffers
-//
-//    if(m_primary_command_buffers[m_current_frame].begin(&begin_info) != vk::Result::eSuccess)
-//    {
-//        throw std::runtime_error("failed to begin recording of framebuffer!");
-//    }
-
-    vk::RenderPassBeginInfo renderpass_info{};
-    renderpass_info.sType = vk::StructureType::eRenderPassBeginInfo;
-    renderpass_info.renderPass = m_render_pass;
-
-    // need to bind the framebuffer for the swapchain image we want to draw to
-    renderpass_info.framebuffer = m_swapchain_framebuffers[m_image_index];
-
-    // define size of the render area;
-    // render area defined as the place shader loads and stores happen
-    renderpass_info.renderArea.offset = vk::Offset2D{0, 0};
-    renderpass_info.renderArea.extent = m_swapchain_extent;
-
-    std::array<vk::ClearValue, 2> clear_values{};
-    vk::ClearColorValue value;
-    value.float32[0] = 0.f; value.float32[1] = 0.f; value.float32[2] = 0.f; value.float32[3] = 1.f;
-    clear_values[0].color = value;
-    clear_values[1].depthStencil = vk::ClearDepthStencilValue{1.f, 0};
-
-    renderpass_info.clearValueCount = static_cast<unsigned>(clear_values.size());
-    renderpass_info.pClearValues = clear_values.data();
-
-
-
     // all functions that record commands cna be recognized by their vk::Cmd prefix
     // they all return void, so no error handling until the recording is finished
     // we use inline since this is a primary command buffer
-    m_primary_command_buffers[m_current_frame].begin_renderpass(renderpass_info, vk::SubpassContents::eSecondaryCommandBuffers);
-    //m_primary_command_buffers[m_current_frame].beginRenderPass(&renderpass_info, vk::SubpassContents::eSecondaryCommandBuffers);
+    m_primary_command_buffers[m_current_frame].begin_renderpass(m_render_pass, m_swapchain_framebuffers[m_image_index], m_swapchain_extent, vk::SubpassContents::eSecondaryCommandBuffers);
 }
 
 void Renderer::end_frame()
 {
-    m_primary_command_buffers[m_current_frame].vk_command_buffer.endRenderPass();
+    m_primary_command_buffers[m_current_frame].end_renderpass();
     m_primary_command_buffers[m_current_frame].end();
 
     vk::SubmitInfo submit_info{};

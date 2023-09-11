@@ -53,7 +53,7 @@ void CommandBuffer::begin_renderpass(const vk::RenderPass& renderpass, const vk:
     vk_command_buffer.beginRenderPass(&renderpass_begin_info, subpass_contents);
 }
 
-void CommandBuffer::bind_pipeline(vk::Pipeline pipeline) const
+void CommandBuffer::bind_pipeline(const vk::Pipeline& pipeline) const
 {
 	vk_command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
 }

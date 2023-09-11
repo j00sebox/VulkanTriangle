@@ -15,7 +15,9 @@ class ModelLoader
 {
 public:
     explicit ModelLoader(Renderer* renderer, const char* file_path);
+    Model load();
     void load_mesh(Mesh& mesh);
+    void load_meshes(Scene* scene);
     void load_material(Material& material);
     const char* get_name();
 

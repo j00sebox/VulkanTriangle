@@ -36,22 +36,26 @@ struct RecordDrawTask : enki::ITaskSet
             command_buffer->bindDescriptorSets(vk::PipelineBindPoint::eGraphics, renderer->get_pipeline_layout(), 0, 1, &camera_data->vk_descriptor_set, 0, nullptr);
 
             command_buffer->pushConstants(renderer->get_pipeline_layout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &scene->models[i].transform);
-            command_buffer->pushConstants(renderer->get_pipeline_layout(), vk::ShaderStageFlagBits::eFragment, 64, sizeof(glm::uvec4), scene->models[i].material.textures);
 
-            Buffer* vertex_buffer = renderer->get_buffer(scene->models[i].mesh.vertex_buffer);
-            vk::Buffer vertex_buffers[] = {vertex_buffer->vk_buffer};
-            vk::DeviceSize offsets[] = {0};
-            command_buffer->bindVertexBuffers(0, 1, vertex_buffers, offsets);
+            for(u32 j = 0; j < scene->models[i].meshes.size(); ++j)
+            {
+                command_buffer->pushConstants(renderer->get_pipeline_layout(), vk::ShaderStageFlagBits::eFragment, 64, sizeof(glm::uvec4), scene->models[i].materials[j].textures);
 
-            Buffer* index_buffer = renderer->get_buffer(scene->models[i].mesh.index_buffer);
-            command_buffer->bindIndexBuffer(index_buffer->vk_buffer, 0, vk::IndexType::eUint32);
+                Buffer* vertex_buffer = renderer->get_buffer(scene->models[i].meshes[j].vertex_buffer);
+                vk::Buffer vertex_buffers[] = {vertex_buffer->vk_buffer};
+                vk::DeviceSize offsets[] = {0};
+                command_buffer->bindVertexBuffers(0, 1, vertex_buffers, offsets);
 
-            // now we can issue the actual draw command
-            // index count
-            // instance count
-            // first index: offset into the vertex buffer
-            // first instance
-            command_buffer->drawIndexed(scene->models[i].mesh.index_count, 1, 0, 0, 0);
+                Buffer* index_buffer = renderer->get_buffer(scene->models[i].meshes[j].index_buffer);
+                command_buffer->bindIndexBuffer(index_buffer->vk_buffer, 0, vk::IndexType::eUint32);
+
+                // now we can issue the actual draw command
+                // index count
+                // instance count
+                // first index: offset into the vertex buffer
+                // first instance
+                command_buffer->drawIndexed(scene->models[i].meshes[j].index_count, 1, 0, 0, 0);
+            }
         }
         command_buffer->end();
     }
@@ -978,6 +982,11 @@ void Renderer::destroy_texture(u32 texture_handle)
 
 void Renderer::destroy_sampler(u32 sampler_handle)
 {
+    if(!m_sampler_pool.valid_handle(sampler_handle))
+    {
+        return;
+    }
+
     auto* sampler = static_cast<Sampler*>(m_sampler_pool.access(sampler_handle));
     logical_device.destroySampler(sampler->vk_sampler, nullptr);
     m_sampler_pool.free(sampler_handle);

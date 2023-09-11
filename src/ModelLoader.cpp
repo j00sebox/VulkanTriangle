@@ -15,6 +15,21 @@ ModelLoader::ModelLoader(Renderer* renderer, const char* file_path) :
         m_base_dir = path.substr(0, (path.find_last_of('\\') + 1));
 }
 
+Model ModelLoader::load()
+{
+    Model model;
+
+    Mesh mesh{};
+    Material material{};
+    load_mesh(mesh);
+    load_material(material);
+
+    model.meshes.push_back(mesh);
+    model.materials.push_back(material);
+
+    return model;
+}
+
 void ModelLoader::load_mesh(Mesh& mesh)
 {
     std::vector<Vertex> vertices = get_vertices(m_scene->mMeshes[0]);

@@ -49,19 +49,25 @@ Application::Application(int width, int height)
 Application::~Application()
 {
 	// TODO: remove later
-	for (Model model : m_scene->models)
+	for (const Model& model : m_scene->models)
 	{
-		m_renderer->destroy_buffer(model.mesh.vertex_buffer);
-		m_renderer->destroy_buffer(model.mesh.index_buffer);
+        for(const Mesh& mesh : model.meshes)
+        {
+            m_renderer->destroy_buffer(mesh.vertex_buffer);
+            m_renderer->destroy_buffer(mesh.index_buffer);
+        }
 
-		for (u32 texture : model.material.textures)
-		{
-			if (texture != m_renderer->get_null_texture_handle())
-			{
-				m_renderer->destroy_texture(texture);
-			}
-		}
-		m_renderer->destroy_sampler(model.material.sampler);
+        for(const Material& material : model.materials)
+        {
+            for (u32 texture : material.textures)
+            {
+                if (texture != m_renderer->get_null_texture_handle())
+                {
+                    m_renderer->destroy_texture(texture);
+                }
+            }
+            //m_renderer->destroy_sampler(material.sampler);
+        }
 	}
 
 	delete m_scene;
@@ -157,9 +163,9 @@ void Application::run()
 
 void Application::load_scene(const std::vector<std::string> &scene)
 {
-	ModelParams params{};
 	for (int i = 0; i < scene.size(); i += 4)
 	{
+        ModelParams params{};
 		params.path = scene[i].c_str();
 
 		std::vector<float> position_values = get_floats_from_string(scene[i + 1]);
@@ -174,7 +180,6 @@ void Application::load_scene(const std::vector<std::string> &scene)
 		params.transform = glm::scale(params.transform, {scale_values[0], scale_values[1], scale_values[2]});
 
 		load_model(params);
-		params = {};
 	}
 }
 
@@ -183,14 +188,11 @@ void Application::load_model(ModelParams params)
 	Timer timer;
 	ModelLoader loader(m_renderer, params.path);
 
-	Mesh mesh{};
-	loader.load_mesh(mesh);
+    Model loaded_model = loader.load();
+    loaded_model.transform = params.transform;
+    m_scene->add_model(loaded_model);
 
-	Material material{};
-	loader.load_material(material);
-
-	m_scene->add_model({.mesh = mesh, .material = material, .transform = params.transform});
-	std::cout << "Model loaded in " << timer.stop() << "ms\n";
+    std::cout << "Model loaded in " << timer.stop() << "ms\n";
 }
 
 void Application::load_primitive(const char *primitive_name)
@@ -199,7 +201,8 @@ void Application::load_primitive(const char *primitive_name)
 	Material material{};
 	ModelLoader::load_primitive(m_renderer, str_to_primitive_type(primitive_name), mesh);
 	ModelLoader::load_texture(m_renderer, "../textures/white_on_white.jpeg", material);
-	m_scene->add_model({.mesh = mesh, .material = material});
+	// FIXME
+    // m_scene->add_model({.mesh = mesh, .material = material});
 }
 
 float Application::get_delta_time()

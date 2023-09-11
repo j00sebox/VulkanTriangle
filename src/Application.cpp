@@ -18,6 +18,34 @@ void coloured_label(const char *label, ImVec4 colour, ImVec2 size)
 	ImGui::PopStyleColor(3);
 }
 
+struct LoadModelTask : enki::ITaskSet
+{
+    void init(Renderer* _renderer, Scene* _scene, const char* _model_path, const glm::mat4& _transform)
+    {
+        renderer = _renderer;
+        scene = _scene;
+        model_path = _model_path;
+        transform = _transform;
+    }
+
+    void ExecuteRange(enki::TaskSetPartition range, uint32_t threadnum) override
+    {
+        Timer timer;
+        ModelLoader loader(renderer, model_path);
+
+        Model loaded_model = loader.load();
+        loaded_model.transform = transform;
+        scene->add_model(loaded_model);
+
+        std::cout << "Model loaded in " << timer.stop() << "ms\n";
+    }
+
+    Renderer* renderer;
+    Scene* scene;
+    const char* model_path;
+    glm::mat4 transform;
+};
+
 Application::Application(int width, int height)
 {
 	Timer timer;
@@ -161,8 +189,10 @@ void Application::run()
 	m_renderer->wait_for_device_idle();
 }
 
-void Application::load_scene(const std::vector<std::string> &scene)
+void Application::load_scene(const std::vector<std::string>& scene)
 {
+    LoadModelTask tasks[scene.size() / 4];
+    u32 task_index = 0;
 	for (int i = 0; i < scene.size(); i += 4)
 	{
         ModelParams params{};
@@ -179,20 +209,29 @@ void Application::load_scene(const std::vector<std::string> &scene)
 		std::vector<float> scale_values = get_floats_from_string(scene[i + 3]);
 		params.transform = glm::scale(params.transform, {scale_values[0], scale_values[1], scale_values[2]});
 
-		load_model(params);
+        tasks[task_index].init(m_renderer, m_scene, params.path, params.transform);
+        m_scheduler->AddTaskSetToPipe(&tasks[task_index]);
+        ++task_index;
 	}
+
+    m_scheduler->WaitforAll();
 }
 
 void Application::load_model(ModelParams params)
 {
-	Timer timer;
-	ModelLoader loader(m_renderer, params.path);
+//	Timer timer;
+//	ModelLoader loader(m_renderer, params.path);
+//
+//    Model loaded_model = loader.load();
+//    loaded_model.transform = params.transform;
+//    m_scene->add_model(loaded_model);
+//
+//    std::cout << "Model loaded in " << timer.stop() << "ms\n";
 
-    Model loaded_model = loader.load();
-    loaded_model.transform = params.transform;
-    m_scene->add_model(loaded_model);
+    LoadModelTask load_model_task;
+    load_model_task.init(m_renderer, m_scene, params.path, params.transform);
 
-    std::cout << "Model loaded in " << timer.stop() << "ms\n";
+    m_scheduler->AddTaskSetToPipe(&load_model_task);
 }
 
 void Application::load_primitive(const char *primitive_name)

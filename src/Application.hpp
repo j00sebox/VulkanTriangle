@@ -34,5 +34,5 @@ private:
     float m_prev_time;
 
     float get_delta_time();
-    std::vector<float> get_floats_from_string(std::string line);
+    static std::vector<float> get_floats_from_string(std::string line);
 };

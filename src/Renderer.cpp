@@ -60,8 +60,10 @@ struct RecordDrawTask : enki::ITaskSet
         command_buffer->end();
     }
 
-    Renderer* renderer;
     vk::CommandBuffer* command_buffer;
+
+private:
+    Renderer* renderer;
     const Scene* scene;
     u32 start;
     u32 end;
@@ -83,7 +85,7 @@ Renderer::Renderer(GLFWwindow* window, enki::TaskScheduler* scheduler) :
     m_window(window),
     m_scheduler(scheduler),
     m_buffer_pool(&m_pool_allocator, 100, sizeof(Buffer)),
-    m_texture_pool(&m_pool_allocator, 10, sizeof(Texture)),
+    m_texture_pool(&m_pool_allocator, 100, sizeof(Texture)),
     m_sampler_pool(&m_pool_allocator, 10, sizeof(Sampler)),
     m_descriptor_set_pool(&m_pool_allocator, 10, sizeof(DescriptorSet))
 {

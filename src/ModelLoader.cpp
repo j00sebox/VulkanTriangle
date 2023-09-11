@@ -21,9 +21,23 @@ Model ModelLoader::load()
     aiNode* root = m_scene->mRootNode;
     aiMatrix4x4 root_transform = root->mTransformation;
 
-    for(u32 i = 0; i < root->mNumChildren; ++i)
+    if(root->mNumChildren > 0)
     {
-        load_node(root->mChildren[i], root_transform, model);
+        for(u32 i = 0; i < root->mNumChildren; ++i)
+        {
+            load_node(root->mChildren[i], root_transform, model);
+        }
+    }
+    else
+    {
+        Mesh mesh{};
+        Material material{};
+        load_mesh(root->mMeshes[0], mesh);
+        load_material(root->mMeshes[0], material);
+
+        model.meshes.push_back(mesh);
+        model.materials.push_back(material);
+        model.transforms.push_back(aimatrix4x4_to_glmmat4(root_transform));
     }
 
     return model;

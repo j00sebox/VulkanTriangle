@@ -35,10 +35,10 @@ struct RecordDrawTask : enki::ITaskSet
             command_buffer->bindDescriptorSets(vk::PipelineBindPoint::eGraphics, renderer->get_pipeline_layout(), 1, 1, &material_data->vk_descriptor_set, 0, nullptr);
             command_buffer->bindDescriptorSets(vk::PipelineBindPoint::eGraphics, renderer->get_pipeline_layout(), 0, 1, &camera_data->vk_descriptor_set, 0, nullptr);
 
-            command_buffer->pushConstants(renderer->get_pipeline_layout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &scene->models[i].transform);
-
             for(u32 j = 0; j < scene->models[i].meshes.size(); ++j)
             {
+                glm::mat4 final_transform = scene->models[i].transform * scene->models[i].transforms[j];
+                command_buffer->pushConstants(renderer->get_pipeline_layout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &final_transform);
                 command_buffer->pushConstants(renderer->get_pipeline_layout(), vk::ShaderStageFlagBits::eFragment, 64, sizeof(glm::uvec4), scene->models[i].materials[j].textures);
 
                 Buffer* vertex_buffer = renderer->get_buffer(scene->models[i].meshes[j].vertex_buffer);

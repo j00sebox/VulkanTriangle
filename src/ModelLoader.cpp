@@ -18,22 +18,43 @@ ModelLoader::ModelLoader(Renderer* renderer, const char* file_path) :
 Model ModelLoader::load()
 {
     Model model;
+    aiNode* root = m_scene->mRootNode;
+    aiMatrix4x4 root_transform = root->mTransformation;
 
-    Mesh mesh{};
-    Material material{};
-    load_mesh(mesh);
-    load_material(material);
-
-    model.meshes.push_back(mesh);
-    model.materials.push_back(material);
+    for(u32 i = 0; i < root->mNumChildren; ++i)
+    {
+        load_node(root->mChildren[i], root_transform, model);
+    }
 
     return model;
 }
 
-void ModelLoader::load_mesh(Mesh& mesh)
+void ModelLoader::load_node(aiNode* current_node, aiMatrix4x4 relative_transform, Model& model)
 {
-    std::vector<Vertex> vertices = get_vertices(m_scene->mMeshes[0]);
-    std::vector<u32> indices = get_indices(m_scene->mMeshes[0]);
+    relative_transform *= current_node->mTransformation;
+
+    if(current_node->mNumMeshes > 0)
+    {
+        Mesh mesh{};
+        Material material{};
+        load_mesh(current_node->mMeshes[0], mesh);
+        load_material(current_node->mMeshes[0], material);
+
+        model.meshes.push_back(mesh);
+        model.materials.push_back(material);
+        model.transforms.push_back(aimatrix4x4_to_glmmat4(relative_transform));
+    }
+
+    for(u32 i = 0; i < current_node->mNumChildren; ++i)
+    {
+        load_node(current_node->mChildren[i], relative_transform, model);
+    }
+}
+
+void ModelLoader::load_mesh(u32 mesh_index, Mesh& mesh)
+{
+    std::vector<Vertex> vertices = get_vertices(m_scene->mMeshes[mesh_index]);
+    std::vector<u32> indices = get_indices(m_scene->mMeshes[mesh_index]);
 
     mesh.vertex_buffer = m_renderer->create_buffer({
            .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
@@ -49,16 +70,16 @@ void ModelLoader::load_mesh(Mesh& mesh)
     });
 }
 
-void ModelLoader::load_material(Material& material)
+void ModelLoader::load_material(u32 material_index, Material& material)
 {
     aiString diffuse_texture_path, specular_texture_path, normal_texture_path, occlusion_texture_path;
-    m_scene->mMaterials[0]->GetTexture(aiTextureType_DIFFUSE, 0, &diffuse_texture_path);
+    m_scene->mMaterials[material_index]->GetTexture(aiTextureType_DIFFUSE, 0, &diffuse_texture_path);
 
     // don't bother to check other textures if no base colour is found
     if (diffuse_texture_path.length == 0)
     {
         std::string textures[] = {
-            "../resources/textures/white_on_white.jpeg",
+            "../textures/white_on_white.jpeg",
             "none",
             "none",
             "none"
@@ -80,9 +101,9 @@ void ModelLoader::load_material(Material& material)
         return;
     }
 
-    m_scene->mMaterials[0]->GetTexture(aiTextureType_SPECULAR, 0, &specular_texture_path);
-    m_scene->mMaterials[0]->GetTexture(aiTextureType_NORMALS, 0, &normal_texture_path);
-    m_scene->mMaterials[0]->GetTexture(aiTextureType_AMBIENT, 0, &occlusion_texture_path);
+    m_scene->mMaterials[material_index]->GetTexture(aiTextureType_SPECULAR, 0, &specular_texture_path);
+    m_scene->mMaterials[material_index]->GetTexture(aiTextureType_NORMALS, 0, &normal_texture_path);
+    m_scene->mMaterials[material_index]->GetTexture(aiTextureType_AMBIENT, 0, &occlusion_texture_path);
 
     std::string textures[4];
 
@@ -212,4 +233,16 @@ std::vector<unsigned> ModelLoader::get_indices(aiMesh* mesh)
     }
 
     return indices;
+}
+
+glm::mat4 ModelLoader::aimatrix4x4_to_glmmat4(aiMatrix4x4 assimp_matrix)
+{
+    glm::mat4 glm_matrix;
+
+    glm_matrix[0][0] = assimp_matrix.a1;    glm_matrix[1][0] = assimp_matrix.a2;    glm_matrix[2][0] = assimp_matrix.a3;    glm_matrix[3][0] = assimp_matrix.a4;
+    glm_matrix[0][1] = assimp_matrix.b1;    glm_matrix[1][1] = assimp_matrix.b2;    glm_matrix[2][1] = assimp_matrix.b3;    glm_matrix[3][1] = assimp_matrix.b4;
+    glm_matrix[0][2] = assimp_matrix.c1;    glm_matrix[1][2] = assimp_matrix.c2;    glm_matrix[2][2] = assimp_matrix.c3;    glm_matrix[3][2] = assimp_matrix.c4;
+    glm_matrix[0][3] = assimp_matrix.d1;    glm_matrix[1][3] = assimp_matrix.d2;    glm_matrix[2][3] = assimp_matrix.d3;    glm_matrix[3][3] = assimp_matrix.d4;
+
+    return glm_matrix;
 }

@@ -20,6 +20,6 @@ struct Model
 {
     std::vector<Mesh>           meshes;
     std::vector<Material>       materials;
-
+    std::vector<glm::mat4>      transforms;
     glm::mat4       transform{1.f};
 };

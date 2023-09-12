@@ -5,13 +5,6 @@
 
 #include "Renderer.hpp"
 #include "Scene.hpp"
-#include "ResourceLoader.hpp"
-
-struct ModelParams
-{
-    const char* path;
-    glm::mat4 transform;
-};
 
 class Application
 {
@@ -21,7 +14,6 @@ public:
 
     void run();
     void load_scene(const std::vector<std::string>& scene);
-    void load_model(ModelParams params);
     void load_primitive(const char* primitive_name);
 
 private:
@@ -29,7 +21,6 @@ private:
     GLFWwindow* m_window;
     Scene* m_scene;
     enki::TaskScheduler* m_scheduler;
-    ResourceLoader* resource_loader;
     bool m_running;
     float m_prev_time;
 

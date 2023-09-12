@@ -191,47 +191,31 @@ void Application::run()
 
 void Application::load_scene(const std::vector<std::string>& scene)
 {
+    const char* path;
+    glm::mat4 transform;
+
     LoadModelTask tasks[scene.size() / 4];
     u32 task_index = 0;
 	for (int i = 0; i < scene.size(); i += 4)
 	{
-        ModelParams params{};
-		params.path = scene[i].c_str();
+		path = scene[i].c_str();
 
 		std::vector<float> position_values = get_floats_from_string(scene[i + 1]);
-		params.transform = glm::translate(glm::mat4(1.f), {position_values[0], position_values[1], position_values[2]});
+		transform = glm::translate(glm::mat4(1.f), {position_values[0], position_values[1], position_values[2]});
 
 		std::vector<float> rotation_values = get_floats_from_string(scene[i + 2]);
-		params.transform = glm::rotate(params.transform,
-									   glm::radians(rotation_values[0]),
+		transform = glm::rotate(transform, glm::radians(rotation_values[0]),
 									   {rotation_values[1], rotation_values[2], rotation_values[3]});
 
 		std::vector<float> scale_values = get_floats_from_string(scene[i + 3]);
-		params.transform = glm::scale(params.transform, {scale_values[0], scale_values[1], scale_values[2]});
+		transform = glm::scale(transform, {scale_values[0], scale_values[1], scale_values[2]});
 
-        tasks[task_index].init(m_renderer, m_scene, params.path, params.transform);
+        tasks[task_index].init(m_renderer, m_scene, path, transform);
         m_scheduler->AddTaskSetToPipe(&tasks[task_index]);
         ++task_index;
 	}
 
     m_scheduler->WaitforAll();
-}
-
-void Application::load_model(ModelParams params)
-{
-//	Timer timer;
-//	ModelLoader loader(m_renderer, params.path);
-//
-//    Model loaded_model = loader.load();
-//    loaded_model.transform = params.transform;
-//    m_scene->add_model(loaded_model);
-//
-//    std::cout << "Model loaded in " << timer.stop() << "ms\n";
-
-    LoadModelTask load_model_task;
-    load_model_task.init(m_renderer, m_scene, params.path, params.transform);
-
-    m_scheduler->AddTaskSetToPipe(&load_model_task);
 }
 
 void Application::load_primitive(const char *primitive_name)
